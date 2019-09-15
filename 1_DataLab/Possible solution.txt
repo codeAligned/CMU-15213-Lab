@@ -1,0 +1,3 @@
+https://zhuanlan.zhihu.com/deeplearningcat
+http://siofive.com/2017/10/16/cmu15213-datalab/
+https://github.com/nikitos3000/cmu-15213-m14/blob/master/L1-datalab/bits.c
