@@ -1,6 +1,3 @@
-// Only phase_3 and phase_4 uses scanf 
-
-
 bomb:     file format elf64-x86-64
 
 
@@ -649,14 +646,14 @@ Disassembly of section .text:
                                                                     // 0x15 = '%'
                                                                     // 0x16 = '&'
                                                                     // 0x17 = '''
-                                                                    // Solution: )/.%&'
+                                                                    // Possible Solution: )/.%&'
                                                                     // 0x2a = 'I'
                                                                     // 0x2f = 'O'
                                                                     // 0x2e = 'N'
                                                                     // 0x25 = 'E'
                                                                     // 0x26 = 'F'
                                                                     // 0x27 = 'G'
-                                                                    // Solution: IONEFG
+                                                                    // Possible Solution: IONEFG
 
                                                                     
   4010a0:	88 54 04 10          	mov    %dl,0x10(%rsp,%rax,1)        // Problem: the memory location seems to be wrong? Not filling the 6 bytes starting from location %rsp + 2 byte.
