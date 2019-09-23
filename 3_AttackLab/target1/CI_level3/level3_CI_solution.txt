@@ -74,7 +74,7 @@ The stack after allocating space in getbuf:
 68 fa 18 40 00       	pushq  $0x4018fa
 c3                   	retq
 
-./hex2raw < level3/level3_CI_solution.txt | ./ctarget -q
+./hex2raw < CI_level3/level3_CI_solution.txt | ./ctarget -q
 */
 
 

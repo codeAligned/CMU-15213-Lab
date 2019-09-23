@@ -25,7 +25,7 @@ The stack after input:
 |00 00 00 00 00 00 00 00  |
 ---------------------------
 
-./hex2raw < level1/level1.txt | ./ctarget -q
+./hex2raw < CI_level1/level1.txt | ./ctarget -q
  */
 
 00 00 00 00 00 00 00 00

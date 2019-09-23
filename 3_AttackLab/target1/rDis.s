@@ -912,6 +912,9 @@ Disassembly of section .text:
   401992:	90                   	nop
   401993:	90                   	nop
 
+
+
+
 0000000000401994 <start_farm>:
   401994:	b8 01 00 00 00       	mov    $0x1,%eax
   401999:	c3                   	retq   
@@ -951,6 +954,10 @@ Disassembly of section .text:
 00000000004019d0 <mid_farm>:
   4019d0:	b8 01 00 00 00       	mov    $0x1,%eax
   4019d5:	c3                   	retq   
+
+
+
+
 
 00000000004019d6 <add_xy>:
   4019d6:	48 8d 04 37          	lea    (%rdi,%rsi,1),%rax
@@ -1095,6 +1102,10 @@ Disassembly of section .text:
   401abd:	90                   	nop
   401abe:	90                   	nop
   401abf:	90                   	nop
+
+
+
+
 
 0000000000401ac0 <save_char>:
   401ac0:	8b 05 3e 46 20 00    	mov    0x20463e(%rip),%eax        # 606104 <gets_cnt>
