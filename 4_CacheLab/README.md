@@ -1,3 +1,5 @@
+Please Read `6 Working on the Lab` in the writeup file before starting Part A, and Part B: these notes are at the end of the file and you might not notice them early enough. However, they provide useful information about the two tasks.
+
 ### Part A 
 - As `s`, `E`, `b` are all constants determined at run time, you cannot construct an array directly. You have to use `malloc` to dynamically allocate memory on the heap. Note that, actually the compiler would not stop you from doing so, but the result is undefined. 
 
