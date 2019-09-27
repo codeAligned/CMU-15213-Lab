@@ -1,4 +1,6 @@
-Please Read `6 Working on the Lab` in the writeup file before starting Part A, and Part B: these notes are at the end of the file and you might not notice them early enough. However, they provide useful information about the two tasks.  
+The original tar file is `cachelab-handout.tar` and the writeup is `attacklab.pdf`. My solution is in `cachelab-handout`.
+ 
+Read `6 Working on the Lab` in the writeup file before starting Part A, and Part B: these notes are at the end of the file and you might not notice them early enough. However, they provide useful information about the two tasks.  
 
 
 
