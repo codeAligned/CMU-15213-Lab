@@ -1,7 +1,8 @@
+# Lab4 CacheLab
+
 The original tar file is `cachelab-handout.tar` and the writeup is `attacklab.pdf`. My solution is in `cachelab-handout`.
  
 Read `6 Working on the Lab` in the writeup file before starting Part A, and Part B: these notes are at the end of the file and you might not notice them early enough. However, they provide useful information about the two tasks.  
-
 
 
 ### Part A 
@@ -20,7 +21,11 @@ Part B is much harder. To solve this, you should recall how cache works: by extr
 
 Blocking technique is used for all problems in Part B.
   
-Estimating/Computing cache miss is an important skill you pick up and get familar with when working on this part.  
+Estimating/Computing cache miss is an important skill you pick up and get familar with when working on this part. 
+
+There are a lot of notes and explanationn in the `trans.c` file.  
+
+*Sidenote*: I found the 64x64 problem very hard and turned to Google for help. When searching in English, most results only contain code but no explanation at all. When searching in Chinese "cache lab 解答", a lot of useful blogs and answers come out.
 
 - 32 x 32  
     This part is still handlable. The cache can contain at most 8 rows, so the block size cannot be larger than 8, otherwise cache misses occur even within the same block. It turns out that 8x8 blocking gives satisfying result.  

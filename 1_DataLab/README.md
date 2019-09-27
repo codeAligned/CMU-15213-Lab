@@ -1,3 +1,5 @@
+# Lab1 DataLab
+
 The original tar file is `datalab-handout.tar` and the writeup is
 `datalab.pdf`. My solution is in `datalab-handout-solution`.
 

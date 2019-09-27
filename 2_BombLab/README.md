@@ -1,3 +1,5 @@
+# Lab2 BombLab
+
 The original tar file is `bomblab.tar` and the writeup is
 `bomblab.pdf`. My solution is in `datalab-solution`.
 
