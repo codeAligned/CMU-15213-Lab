@@ -41,6 +41,6 @@ There are a lot of notes and explanationn in the `trans.c` file.
 I spent around two hours on Part A, when I did not use `malloc` to allocate the cache data structure, but use `cache_line_t cache[S][E]` directly, even though the writeup explicity requires the code to use `malloc`. When using `cache_line_t cache[S][E]`, after I set the valid bits to some value, they become random value when I try to access them in other functions. Then I swithch to `malloc`, no such problem occurs, and I finish the problem in one or two hours.  
 The lesson from this is that: First, when you need an array whose size is not known at compile time, use `malloc` to allocate memory dynamically. Second, and more importantly, do not be afraid to use `malloc` and pointers in C.   
 
-I also wasted some time on Part B. Somehow I began to think that each row in the matrix would be mapped to a cache set and blablabla, which is obviously wrong. But, coincidently, I finished the 32 x 32 case successfylly, which is even worse because it took a very long time for me to find this great mistake in concept...   
+I also wasted some time on Part B. Somehow at some point, I began to think that each row in the matrix would be mapped to a cache set and blablabla, which is obviously wrong. But, coincidently, I finished the 32 x 32 case successfylly, which is even worse because it took a very long time for me to find this great mistake in concept...   
 
 The process is a bit painful, but really help me learn cache mechanism, blocking and caching performance compution. 
