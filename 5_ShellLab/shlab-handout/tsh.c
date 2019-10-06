@@ -84,6 +84,9 @@ void app_error(char *msg);
 typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 
+/* Wrapper functions borrowed from csapp.c */
+pid_t Fork(void);
+
 /*
  * main - The shell's main routine 
  */
@@ -168,12 +171,32 @@ static void print_argv(char **argv) {
  * when we type ctrl-c (ctrl-z) at the keyboard.  
 */
 void eval(char *cmdline) {
-    int bg;
     char *argv[MAXARGS];
-
+    char cmdline_copy[MAXLINE];
+    int bg;
+    int pid;
+    
+    strcpy(cmdline_copy, cmdline);
     bg = parseline(cmdline, argv);
-    if (strcmp(argv[0], "quit") == 0) {
-        kill(getpid(), SIGQUIT);
+    print_argv(argv);
+    if (argv[0] == NULL) return;
+
+    if (!builtin_cmd(argv)) {
+        if ((pid = Fork()) == 0) { /* Child process runs user job */
+            if (execv(argv[0], argv) < 0) {
+                printf("%s: Command not found\n", argv[0]);
+                exit(0);
+            }
+
+            if (!bg) {  /* Foreground job */
+                int status;
+                if (waitpid(pid, &status, 0) < 0) {
+                    unix_error("waitpid error");
+                }
+            } else {  /* Background job */
+
+            }
+        } 
     }
     return;
 }
@@ -237,7 +260,26 @@ int parseline(const char *cmdline, char **argv) {
  *    it immediately.  
  */
 int builtin_cmd(char **argv) {
-    return 0; /* not a builtin command */
+    int is_built_in = 0;
+
+    if (strcmp(argv[0], "quit") == 0) {
+        kill(getpid(), SIGQUIT);
+        is_built_in = 1;
+    } else if (strcmp(argv[0], "jobs") == 0) {
+        // TODO
+        kill(getpid(), SIGQUIT);
+        is_built_in = 1;
+    } else if (strcmp(argv[0], "bg") == 0) {
+        // TODO
+        kill(getpid(), SIGQUIT);
+        is_built_in = 1;
+    } else if (strcmp(argv[0], "fg") == 0) {
+        // TODO
+        kill(getpid(), SIGQUIT);
+        is_built_in = 1;
+    }
+
+    return is_built_in;
 }
 
 /* 
@@ -492,4 +534,12 @@ handler_t *Signal(int signum, handler_t *handler) {
 void sigquit_handler(int sig) {
     // printf("Terminating after receipt of SIGQUIT signal\n");
     exit(1);
+}
+
+pid_t Fork(void) {
+    pid_t pid;
+
+    if ((pid = fork()) < 0)
+        unix_error("Fork error");
+    return pid;
 }
