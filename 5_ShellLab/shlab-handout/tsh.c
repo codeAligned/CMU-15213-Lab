@@ -175,28 +175,27 @@ void eval(char *cmdline) {
     char cmdline_copy[MAXLINE];
     int bg;
     int pid;
-    
+
     strcpy(cmdline_copy, cmdline);
     bg = parseline(cmdline, argv);
-    print_argv(argv);
     if (argv[0] == NULL) return;
-
+    
     if (!builtin_cmd(argv)) {
         if ((pid = Fork()) == 0) { /* Child process runs user job */
             if (execv(argv[0], argv) < 0) {
                 printf("%s: Command not found\n", argv[0]);
                 exit(0);
             }
+        }
 
-            if (!bg) {  /* Foreground job */
-                int status;
-                if (waitpid(pid, &status, 0) < 0) {
-                    unix_error("waitpid error");
-                }
-            } else {  /* Background job */
-
+        if (!bg) { /* Foreground job */
+            int status;
+            if (waitpid(pid, &status, 0) < 0) {
+                unix_error("waitpid error");
             }
-        } 
+        } else { /* Background job */
+            printf("[1] (%d) %s", pid, cmdline);
+        }
     }
     return;
 }
