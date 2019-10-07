@@ -3,6 +3,10 @@
  * 
  * <Put your name and login ID here>
  */
+/* Begin of macros and type definition to avoid VS Code complaining. */
+// #define _POSIX_SOURCE
+/* End of macros and type definition to avoid VS Code complaining. */
+
 #include <ctype.h>
 #include <errno.h>
 #include <signal.h>
@@ -49,6 +53,10 @@ struct job_t {             /* The job struct */
     char cmdline[MAXLINE]; /* command line */
 };
 struct job_t jobs[MAXJOBS]; /* The job list */
+
+/* Masks for signal blocking and unblocking */
+sigset_t mask_all, mask_sigchld;
+
 /* End global variables */
 
 /* Function prototypes */
@@ -84,8 +92,15 @@ void app_error(char *msg);
 typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 
-/* Wrapper functions borrowed from csapp.c */
+/* Wrapper functions borrowed from csapp.c  - YY */
 pid_t Fork(void);
+void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+void Sigemptyset(sigset_t *set);
+void Sigfillset(sigset_t *set);
+void Sigaddset(sigset_t *set, int signum);
+void Sigdelset(sigset_t *set, int signum);
+int Sigismember(const sigset_t *set, int signum);
+int Sigsuspend(const sigset_t *set);
 
 /*
  * main - The shell's main routine 
@@ -116,8 +131,12 @@ int main(int argc, char **argv) {
         }
     }
 
-    /* Install the signal handlers */
+    /* Set value for signal masks. - YY */
+    Sigfillset(&mask_all);
+    Sigemptyset(&mask_sigchld);
+    Sigaddset(&mask_sigchld, SIGCHLD);
 
+    /* Install the signal handlers */
     /* These are the ones you will need to implement */
     Signal(SIGINT, sigint_handler);   /* ctrl-c */
     Signal(SIGTSTP, sigtstp_handler); /* ctrl-z */
@@ -175,24 +194,42 @@ void eval(char *cmdline) {
     char cmdline_copy[MAXLINE];
     int bg;
     int pid;
+    sigset_t prev_mask;
 
     strcpy(cmdline_copy, cmdline);
     bg = parseline(cmdline, argv);
     if (argv[0] == NULL) return;
-    
+
     if (!builtin_cmd(argv)) {
+        Sigprocmask(SIG_BLOCK, &mask_sigchld, &prev_mask); /* Only block SIG_CHLD, no others */
         if ((pid = Fork()) == 0) { /* Child process runs user job */
+            Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
             if (execv(argv[0], argv) < 0) {
                 printf("%s: Command not found\n", argv[0]);
                 exit(0);
             }
         }
 
+        Sigprocmask(SIG_BLOCK, &mask_all, NULL); /* BLock all signals */
+        strcpy(cmdline_copy, cmdline);
+        if (bg) {
+            addjob(jobs, pid, BG, cmdline_copy);
+        } else {
+            addjob(jobs, pid, FG, cmdline_copy);
+        }
+        Sigprocmask(SIG_SETMASK, &prev_mask, NULL); /* Original block, SIG_CHLD not blocked */
+
         if (!bg) { /* Foreground job */
+            // For foreground job, we do not need signal handler to do the job deleting
+            // asychonously. We mask SIG_CHID for foreground job.
+            Sigprocmask(SIG_BLOCK, &mask_sigchld, &prev_mask);
             int status;
             if (waitpid(pid, &status, 0) < 0) {
                 unix_error("waitpid error");
+            } else {
+                deletejob(jobs, pid);
             }
+            sigprocmask(SIG_SETMASK, &prev_mask, NULL);
         } else { /* Background job */
             printf("[1] (%d) %s", pid, cmdline);
         }
@@ -265,8 +302,7 @@ int builtin_cmd(char **argv) {
         kill(getpid(), SIGQUIT);
         is_built_in = 1;
     } else if (strcmp(argv[0], "jobs") == 0) {
-        // TODO
-        kill(getpid(), SIGQUIT);
+        listjobs(jobs);
         is_built_in = 1;
     } else if (strcmp(argv[0], "bg") == 0) {
         // TODO
@@ -307,7 +343,17 @@ void waitfg(pid_t pid) {
  *     currently running children to terminate.  
  */
 void sigchld_handler(int sig) {
-    return;
+    int old_errno = errno;
+    pid_t pid;
+    sigset_t prev_mask;
+
+    while((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
+        Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
+        deletejob(jobs, pid);
+        Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+    }
+
+    errno = old_errno;
 }
 
 /* 
@@ -541,4 +587,48 @@ pid_t Fork(void) {
     if ((pid = fork()) < 0)
         unix_error("Fork error");
     return pid;
+}
+
+void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
+    if (sigprocmask(how, set, oldset) < 0)
+        unix_error("Sigprocmask error");
+    return;
+}
+
+void Sigemptyset(sigset_t *set) {
+    if (sigemptyset(set) < 0)
+        unix_error("Sigemptyset error");
+    return;
+}
+
+void Sigfillset(sigset_t *set) {
+    if (sigfillset(set) < 0)
+        unix_error("Sigfillset error");
+    return;
+}
+
+void Sigaddset(sigset_t *set, int signum) {
+    if (sigaddset(set, signum) < 0)
+        unix_error("Sigaddset error");
+    return;
+}
+
+void Sigdelset(sigset_t *set, int signum) {
+    if (sigdelset(set, signum) < 0)
+        unix_error("Sigdelset error");
+    return;
+}
+
+int Sigismember(const sigset_t *set, int signum) {
+    int rc;
+    if ((rc = sigismember(set, signum)) < 0)
+        unix_error("Sigismember error");
+    return rc;
+}
+
+int Sigsuspend(const sigset_t *set) {
+    int rc = sigsuspend(set); /* always returns -1 */
+    if (errno != EINTR)
+        unix_error("Sigsuspend error");
+    return rc;
 }

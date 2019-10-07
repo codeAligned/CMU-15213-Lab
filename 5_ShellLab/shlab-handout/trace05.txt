@@ -1,7 +1,9 @@
 #
 # trace05.txt - Process jobs builtin command.
 #
+# \046 stands for '&'
 /bin/echo -e tsh> ./myspin 2 \046
+
 ./myspin 2 &
 
 /bin/echo -e tsh> ./myspin 3 \046
