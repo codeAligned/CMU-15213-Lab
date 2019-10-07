@@ -1,6 +1,6 @@
 #
 # trace12.txt - Forward SIGTSTP to every process in foreground process group
-#
+# 
 /bin/echo -e tsh> ./mysplit 4
 ./mysplit 4 
 
