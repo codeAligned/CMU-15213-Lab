@@ -56,6 +56,7 @@ struct job_t jobs[MAXJOBS]; /* The job list */
 
 /* Masks for signal blocking and unblocking */
 sigset_t mask_all, mask_sigchld;
+int fg_terminated = 0;
 
 /* End global variables */
 
@@ -101,6 +102,8 @@ void Sigaddset(sigset_t *set, int signum);
 void Sigdelset(sigset_t *set, int signum);
 int Sigismember(const sigset_t *set, int signum);
 int Sigsuspend(const sigset_t *set);
+
+static void printjob(struct job_t *job);
 
 /*
  * main - The shell's main routine 
@@ -202,7 +205,8 @@ void eval(char *cmdline) {
 
     if (!builtin_cmd(argv)) {
         Sigprocmask(SIG_BLOCK, &mask_sigchld, &prev_mask); /* Only block SIG_CHLD, no others */
-        if ((pid = Fork()) == 0) { /* Child process runs user job */
+        if ((pid = Fork()) == 0) {                         /* Child process runs user job */
+            setpgid(0, 0);
             Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
             if (execv(argv[0], argv) < 0) {
                 printf("%s: Command not found\n", argv[0]);
@@ -210,85 +214,22 @@ void eval(char *cmdline) {
             }
         }
 
+        int current_jid = nextjid;
         Sigprocmask(SIG_BLOCK, &mask_all, NULL); /* BLock all signals */
         strcpy(cmdline_copy, cmdline);
         if (bg) {
             addjob(jobs, pid, BG, cmdline_copy);
+            printf("[%d] (%d) %s", current_jid, pid, cmdline);
         } else {
             addjob(jobs, pid, FG, cmdline_copy);
         }
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL); /* Original block, SIG_CHLD not blocked */
 
-        if (!bg) { /* Foreground job */
-            // For foreground job, we do not need signal handler to do the job deleting
-            // asychonously. We mask SIG_CHID for foreground job.
-            Sigprocmask(SIG_BLOCK, &mask_sigchld, &prev_mask);
-            int status;
-            if (waitpid(pid, &status, 0) < 0) {
-                unix_error("waitpid error");
-            } else {
-                deletejob(jobs, pid);
-            }
-            sigprocmask(SIG_SETMASK, &prev_mask, NULL);
-        } else { /* Background job */
-            printf("[1] (%d) %s", pid, cmdline);
+        if (!bg) {
+            waitfg(pid);
         }
     }
     return;
-}
-
-/* 
- * parseline - Parse the command line and build the argv array.
- * 
- * Characters enclosed in single quotes are treated as a single
- * argument.  Return true if the user has requested a BG job, false if
- * the user has requested a FG job.  
- */
-int parseline(const char *cmdline, char **argv) {
-    static char array[MAXLINE]; /* holds local copy of command line */
-    char *buf = array;          /* ptr that traverses command line */
-    char *delim;                /* points to first space delimiter */
-    int argc;                   /* number of args */
-    int bg;                     /* background job? */
-
-    strcpy(buf, cmdline);
-    buf[strlen(buf) - 1] = ' ';   /* replace trailing '\n' with space */
-    while (*buf && (*buf == ' ')) /* ignore leading spaces */
-        buf++;
-
-    /* Build the argv list */
-    argc = 0;
-    if (*buf == '\'') {
-        buf++;
-        delim = strchr(buf, '\'');
-    } else {
-        delim = strchr(buf, ' ');
-    }
-
-    while (delim) {
-        argv[argc++] = buf;
-        *delim = '\0';
-        buf = delim + 1;
-        while (*buf && (*buf == ' ')) /* ignore spaces */
-            buf++;
-
-        if (*buf == '\'') {
-            buf++;
-            delim = strchr(buf, '\'');
-        } else {
-            delim = strchr(buf, ' ');
-        }
-    }
-    argv[argc] = NULL;
-
-    if (argc == 0) /* ignore blank line */
-        return 1;
-
-    /* should the job run in the background? */
-    if ((bg = (*argv[argc - 1] == '&')) != 0) {
-        argv[--argc] = NULL;
-    }
-    return bg;
 }
 
 /* 
@@ -328,7 +269,22 @@ void do_bgfg(char **argv) {
  * waitfg - Block until process pid is no longer the foreground process
  */
 void waitfg(pid_t pid) {
-    return;
+    while (1) {
+        int state = FG;
+        for (int i = 0; i < MAXJOBS && jobs[i].pid != 0; ++i) {
+            if (jobs[i].pid == pid) {
+                state = jobs[i].state;
+                break;
+            }
+        }
+        int jid = pid2jid(pid);
+
+        if (jid == 0 || state != FG) { /* Job deleted or no longer foreground */
+            return;
+        }
+
+        sleep(1);
+    }
 }
 
 /*****************
@@ -346,14 +302,26 @@ void sigchld_handler(int sig) {
     int old_errno = errno;
     pid_t pid;
     sigset_t prev_mask;
+    int status;
 
-    while((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
+    // Reap as many as possible, but should not wait for unexited child!
+    // Use WNOHANG option.
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
         deletejob(jobs, pid);
+        if (status != 0) {
+            printf("Job [%d] (%d) terminated by signal %d\n",
+                   pid2jid(pid), pid, status);
+        }
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
     }
 
     errno = old_errno;
+}
+
+static void printjob(struct job_t *job) {
+    printf("JID: %d, PID: %2d, PGID: %d, STATE: %d, CMD: %s",
+           job->jid, job->pid, getpgid(job->pid), job->state, job->cmdline);
 }
 
 /* 
@@ -362,7 +330,12 @@ void sigchld_handler(int sig) {
  *    to the foreground job.  
  */
 void sigint_handler(int sig) {
-    return;
+    for (int i = 0; i < MAXJOBS; ++i) {
+        if (jobs[i].state == FG) {
+            kill(-jobs[i].pid, SIGINT);
+            return;
+        }
+    }
 }
 
 /*
@@ -631,4 +604,58 @@ int Sigsuspend(const sigset_t *set) {
     if (errno != EINTR)
         unix_error("Sigsuspend error");
     return rc;
+}
+
+/* 
+ * parseline - Parse the command line and build the argv array.
+ * 
+ * Characters enclosed in single quotes are treated as a single
+ * argument.  Return true if the user has requested a BG job, false if
+ * the user has requested a FG job.  
+ */
+int parseline(const char *cmdline, char **argv) {
+    static char array[MAXLINE]; /* holds local copy of command line */
+    char *buf = array;          /* ptr that traverses command line */
+    char *delim;                /* points to first space delimiter */
+    int argc;                   /* number of args */
+    int bg;                     /* background job? */
+
+    strcpy(buf, cmdline);
+    buf[strlen(buf) - 1] = ' ';   /* replace trailing '\n' with space */
+    while (*buf && (*buf == ' ')) /* ignore leading spaces */
+        buf++;
+
+    /* Build the argv list */
+    argc = 0;
+    if (*buf == '\'') {
+        buf++;
+        delim = strchr(buf, '\'');
+    } else {
+        delim = strchr(buf, ' ');
+    }
+
+    while (delim) {
+        argv[argc++] = buf;
+        *delim = '\0';
+        buf = delim + 1;
+        while (*buf && (*buf == ' ')) /* ignore spaces */
+            buf++;
+
+        if (*buf == '\'') {
+            buf++;
+            delim = strchr(buf, '\'');
+        } else {
+            delim = strchr(buf, ' ');
+        }
+    }
+    argv[argc] = NULL;
+
+    if (argc == 0) /* ignore blank line */
+        return 1;
+
+    /* should the job run in the background? */
+    if ((bg = (*argv[argc - 1] == '&')) != 0) {
+        argv[--argc] = NULL;
+    }
+    return bg;
 }
