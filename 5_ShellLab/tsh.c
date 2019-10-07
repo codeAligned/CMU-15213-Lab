@@ -92,7 +92,6 @@ void initjobs(struct job_t *jobs);
 int maxjid(struct job_t *jobs);
 int addjob(struct job_t *jobs, pid_t pid, int state, char *cmdline);
 int deletejob(struct job_t *jobs, pid_t pid);
-int stopjob(struct job_t *jobs, pid_t pid); /* YY */
 pid_t fgpid(struct job_t *jobs);
 struct job_t *getjobpid(struct job_t *jobs, pid_t pid);
 struct job_t *getjobjid(struct job_t *jobs, int jid);
@@ -224,7 +223,6 @@ void eval(char *cmdline) {
             addjob(jobs, pid, BG, cmdline_copy);
             printf("[%d] (%d) %s", current_jid, pid, cmdline);
         } else {
-
             addjob(jobs, pid, FG, cmdline_copy);
         }
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL); /* Original block, SIG_CHLD not blocked */
@@ -275,15 +273,8 @@ void do_bgfg(char **argv) {
 void waitfg(pid_t pid) {
     while (1) {
         int jid = pid2jid(pid);
-        int state = -1;
-        for(int i = 0; i < MAXJOBS && jobs[i].pid != 0; ++i) {
-            if (pid == jobs[i].pid) {
-                state = jobs[i].state;
-            }
-        }
 
-        if (jid == 0 || (state != -1 && state != FG)) { 
-            /* Job deleted or no longer foreground */
+        if (jid == 0) { /* Job deleted or no longer foreground */
             return;
         }
 
@@ -313,25 +304,14 @@ void sigchld_handler(int sig) {
     while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
         Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
         jid = pid2jid(pid);
-
-        if (WIFEXITED(status)) {
-            // Child process is terminated normally, delete the job.
-            // WIFEXITED(wstatus): returns true if the child terminated
-            // normally, that is, by calling exit(3) or _exit(2), or by
-            // returning from main(). The status is in WEXISTSTATUS(status).
-            deletejob(jobs, pid);
-        } else if (WIFSIGNALED(status)) {
-            // Child process is terminated by signal of WTERMSIG(code)
-            deletejob(jobs, pid);
-            printf("Job [%d] (%d) terminated by signal %d\n",
-                   jid, pid, WEXITSTATUS(status));
-        } else if (WIFSTOPPED(status)) {
-            // child was stopped by signal of WSTOPSIG(code)
-            stopjob(jobs, pid);
-            printf("Job [%d] (%d) stopped by signal %d\n",
-                   jid, pid, WSTOPSIG(status));
+        deletejob(jobs, pid);  // The job should be deleted before printing info
+        if (status != 0) {
+            if (status == 2) {
+                printf("Job [%d] (%d) terminated by signal 2\n", jid, pid);
+            } else if (status == 5247) {
+                printf("Job [%d] (%d) stopped by signal 20\n", jid, pid);
+            }
         }
-
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
     }
 
@@ -344,15 +324,11 @@ void sigchld_handler(int sig) {
  *    to the foreground job.  
  */
 void sigint_handler(int sig) {
-    int old_errno = errno;
-
     for (int i = 0; i < MAXJOBS; ++i) {
         if (jobs[i].state == FG) {
-            kill(-(jobs[i].pid), SIGINT);
+            kill(-jobs[i].pid, SIGINT);
         }
     }
-
-    errno = old_errno;
 }
 
 /*
@@ -361,16 +337,11 @@ void sigint_handler(int sig) {
  *     foreground job by sending it a SIGTSTP.  
  */
 void sigtstp_handler(int sig) {
-    int old_errno = errno;
-    printf("catch SIGTSTP\n");
-
     for (int i = 0; i < MAXJOBS; ++i) {
         if (jobs[i].state == FG) {
-            kill(-(jobs[i].pid), SIGTSTP);
+            kill(-jobs[i].pid, 20);
         }
     }
-
-    errno = old_errno;
 }
 
 /*********************
@@ -443,22 +414,6 @@ int deletejob(struct job_t *jobs, pid_t pid) {
         if (jobs[i].pid == pid) {
             clearjob(&jobs[i]);
             nextjid = maxjid(jobs) + 1;
-            return 1;
-        }
-    }
-    return 0;
-}
-
-/* stopjob - Stop a job whose PID=pid from the job list*/
-int stopjob(struct job_t *jobs, pid_t pid) {
-    int i;
-
-    if (pid < 1)
-        return 0;
-
-    for (i = 0; i < MAXJOBS; i++) {
-        if (jobs[i].pid == pid) {
-            jobs[i].state = ST;
             return 1;
         }
     }
