@@ -1,0 +1,10 @@
+./sdriver.pl -t trace14.txt -s ./tsh -a "-p"
+#
+# trace14.txt - Simple error handling
+#
+tsh> ./bogus
+./bogus: Command not found
+tsh> ./myspin 4 &
+[1] (2008) ./myspin 4 &
+tsh> fg
+Unrecognized input.

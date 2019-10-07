@@ -92,7 +92,7 @@ void initjobs(struct job_t *jobs);
 int maxjid(struct job_t *jobs);
 int addjob(struct job_t *jobs, pid_t pid, int state, char *cmdline);
 int deletejob(struct job_t *jobs, pid_t pid);
-int setjobstate(struct job_t *jobs, pid_t pid, int new_state);  /* YY */
+int setjobstate(struct job_t *jobs, pid_t pid, int new_state); /* YY */
 pid_t fgpid(struct job_t *jobs);
 struct job_t *getjobpid(struct job_t *jobs, pid_t pid);
 struct job_t *getjobjid(struct job_t *jobs, int jid);
@@ -263,8 +263,27 @@ int builtin_cmd(char **argv) {
  * do_bgfg - Execute the builtin bg and fg commands
  */
 void do_bgfg(char **argv) {
-    if (argv[1] == 0 || argv[2] != 0) {
-        app_error("Unrecognized input.");
+    if (argv[1] == 0) {
+        printf("%s command requires PID or %%jobid argument\n", argv[0]);
+        return;
+    }
+
+
+    long num;
+    if (*(argv[1]) == '%') {
+        num = strtol((argv[1] + 1), NULL, 10);
+    } else {
+        num = strtol(argv[1], NULL, 10);
+    }
+
+    if (num <= 0) {
+        printf("%s: argument must be a PID or %%jobid\n", argv[0]);
+        return;
+    }
+
+    if (argv[2] != 0) {
+        printf("Too many arguments.");
+        return;
     }
 
     int bg = strcmp(argv[0], "bg") == 0;
@@ -274,12 +293,22 @@ void do_bgfg(char **argv) {
 
     Sigprocmask(SIG_SETMASK, &mask_all, &prev_mask);
     if (*(argv[1]) == '%') {
-        jid = atoi(++argv[1]);
+        jid = num;
         job = getjobjid(jobs, jid);
+        if (!job) {
+            printf("(%%%d): No such job\n", jid);
+            Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+            return;
+        }
         pid = job->pid;
     } else {
-        pid = atoi(argv[1]);
+        pid = num;
         job = getjobpid(jobs, pid);
+        if (!job) {
+            printf("(%d): No such process\n", pid);
+            Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+            return;
+        }
         jid = job->jid;
     }
     Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
@@ -324,7 +353,7 @@ void waitfg(pid_t pid) {
             /* Job deleted or no longer foreground */
             return;
         }
-        
+
         sleep(1);
     }
 }
@@ -479,7 +508,6 @@ int deletejob(struct job_t *jobs, pid_t pid) {
     }
     return 0;
 }
-
 
 /* setjobstate - Set the state of a job whose PID=pid from the job list*/
 int setjobstate(struct job_t *jobs, pid_t pid, int new_state) {

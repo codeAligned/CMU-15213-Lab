@@ -1,0 +1,30 @@
+./sdriver.pl -t trace14.txt -s ./tshref -a "-p"
+#
+# trace14.txt - Simple error handling
+#
+tsh> ./bogus
+./bogus: Command not found
+tsh> ./myspin 4 &
+[1] (1989) ./myspin 4 &
+tsh> fg
+fg command requires PID or %jobid argument
+tsh> bg
+bg command requires PID or %jobid argument
+tsh> fg a
+fg: argument must be a PID or %jobid
+tsh> bg a
+bg: argument must be a PID or %jobid
+tsh> fg 9999999
+(9999999): No such process
+tsh> bg 9999999
+(9999999): No such process
+tsh> fg %2
+%2: No such job
+tsh> fg %1
+Job [1] (1989) stopped by signal 20
+tsh> bg %2
+%2: No such job
+tsh> bg %1
+[1] (1989) ./myspin 4 &
+tsh> jobs
+[1] (1989) Running ./myspin 4 &
