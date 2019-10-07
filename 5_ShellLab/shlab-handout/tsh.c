@@ -300,7 +300,7 @@ void waitfg(pid_t pid) {
  */
 void sigchld_handler(int sig) {
     int old_errno = errno;
-    pid_t pid;
+    pid_t pid, jid;
     sigset_t prev_mask;
     int status;
 
@@ -308,10 +308,10 @@ void sigchld_handler(int sig) {
     // Use WNOHANG option.
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
+        jid = pid2jid(pid);
         deletejob(jobs, pid);
         if (status != 0) {
-            printf("Job [%d] (%d) terminated by signal %d\n",
-                   pid2jid(pid), pid, status);
+            printf("Job [%d] (%d) terminated by signal %d\n", jid, pid, status);
         }
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
     }
@@ -333,7 +333,6 @@ void sigint_handler(int sig) {
     for (int i = 0; i < MAXJOBS; ++i) {
         if (jobs[i].state == FG) {
             kill(-jobs[i].pid, SIGINT);
-            return;
         }
     }
 }
