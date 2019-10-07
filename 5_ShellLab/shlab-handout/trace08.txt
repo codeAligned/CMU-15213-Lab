@@ -1,6 +1,12 @@
 #
 # trace08.txt - Forward SIGTSTP only to foreground job.
 #
+# Very helpful reference: 
+# https://stackoverflow.com/questions/28209525/how-would-i-check-for-child-process-changing-state-but-not-terminating
+# You might get 5247 from SIGTSTP, which should be 20.
+# 5247 = 0x147f
+# 20   = 0x14
+
 /bin/echo -e tsh> ./myspin 4 \046
 ./myspin 4 &
 

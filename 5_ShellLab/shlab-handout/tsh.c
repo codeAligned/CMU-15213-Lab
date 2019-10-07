@@ -224,7 +224,6 @@ void eval(char *cmdline) {
             addjob(jobs, pid, BG, cmdline_copy);
             printf("[%d] (%d) %s", current_jid, pid, cmdline);
         } else {
-
             addjob(jobs, pid, FG, cmdline_copy);
         }
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL); /* Original block, SIG_CHLD not blocked */
@@ -250,12 +249,10 @@ int builtin_cmd(char **argv) {
         listjobs(jobs);
         is_built_in = 1;
     } else if (strcmp(argv[0], "bg") == 0) {
-        // TODO
-        kill(getpid(), SIGQUIT);
+        do_bgfg(argv);
         is_built_in = 1;
     } else if (strcmp(argv[0], "fg") == 0) {
-        // TODO
-        kill(getpid(), SIGQUIT);
+        do_bgfg(argv);
         is_built_in = 1;
     }
 
@@ -266,7 +263,27 @@ int builtin_cmd(char **argv) {
  * do_bgfg - Execute the builtin bg and fg commands
  */
 void do_bgfg(char **argv) {
-    return;
+    if (argv[1] == 0 || argv[2] != 0) {
+        app_error("Unrecognized input.");
+    }
+
+    int bg = strcmp(argv[0], "bg") == 0;
+    int pid = -1, jid = -1;
+    struct job_t *job;
+    if (*(argv[1]) == '%') {
+        jid = atoi(++argv[1]);
+        job = getjobjid(jobs, jid);
+        pid = job->pid;
+    } else {
+        pid = atoi(argv[1]);
+        job = getjobpid(jobs, pid);
+        jid = job->jid;
+    }
+
+    if (bg) {
+        printf("[%d] (%d) %s", jid, pid, job->cmdline);
+        kill(-pid, SIGCONT);
+    }
 }
 
 /* 
@@ -276,13 +293,13 @@ void waitfg(pid_t pid) {
     while (1) {
         int jid = pid2jid(pid);
         int state = -1;
-        for(int i = 0; i < MAXJOBS && jobs[i].pid != 0; ++i) {
-            if (pid == jobs[i].pid) {
-                state = jobs[i].state;
-            }
+
+        struct job_t *fb_job = getjobpid(jobs, pid);
+        if (fb_job) {
+            state = fb_job->state;
         }
 
-        if (jid == 0 || (state != -1 && state != FG)) { 
+        if (jid == 0 || (state != -1 && state != FG)) {
             /* Job deleted or no longer foreground */
             return;
         }
@@ -310,7 +327,7 @@ void sigchld_handler(int sig) {
 
     // Reap as many as possible, but should not wait for unexited child!
     // Use WNOHANG option.
-    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
+    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED | WCONTINUED)) > 0) {
         Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
         jid = pid2jid(pid);
 
@@ -324,9 +341,9 @@ void sigchld_handler(int sig) {
             // Child process is terminated by signal of WTERMSIG(code)
             deletejob(jobs, pid);
             printf("Job [%d] (%d) terminated by signal %d\n",
-                   jid, pid, WEXITSTATUS(status));
+                   jid, pid, WTERMSIG(status));
         } else if (WIFSTOPPED(status)) {
-            // child was stopped by signal of WSTOPSIG(code)
+            // child process was stopped by signal of WSTOPSIG(code)
             stopjob(jobs, pid);
             printf("Job [%d] (%d) stopped by signal %d\n",
                    jid, pid, WSTOPSIG(status));
@@ -345,13 +362,7 @@ void sigchld_handler(int sig) {
  */
 void sigint_handler(int sig) {
     int old_errno = errno;
-
-    for (int i = 0; i < MAXJOBS; ++i) {
-        if (jobs[i].state == FG) {
-            kill(-(jobs[i].pid), SIGINT);
-        }
-    }
-
+    kill(-fgpid(jobs), SIGINT);
     errno = old_errno;
 }
 
@@ -362,14 +373,7 @@ void sigint_handler(int sig) {
  */
 void sigtstp_handler(int sig) {
     int old_errno = errno;
-    printf("catch SIGTSTP\n");
-
-    for (int i = 0; i < MAXJOBS; ++i) {
-        if (jobs[i].state == FG) {
-            kill(-(jobs[i].pid), SIGTSTP);
-        }
-    }
-
+    kill(-fgpid(jobs), SIGTSTP);
     errno = old_errno;
 }
 
