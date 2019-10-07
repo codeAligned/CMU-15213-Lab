@@ -268,7 +268,6 @@ void do_bgfg(char **argv) {
         return;
     }
 
-
     long num;
     if (*(argv[1]) == '%') {
         num = strtol((argv[1] + 1), NULL, 10);
