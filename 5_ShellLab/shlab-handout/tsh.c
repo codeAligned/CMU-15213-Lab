@@ -3,8 +3,21 @@
  * 
  * <Put your name and login ID here>
  */
+
 /* Begin of macros and type definition to avoid VS Code complaining. */
 // #define _POSIX_SOURCE
+
+// static void print_argv(char **argv) {
+//     int i;
+//     for (i = 0; i < MAXARGS && argv[i]; ++i) {
+//         printf("argv[%d]  %s\n", i, argv[i]);
+//     }
+// }
+
+// static void printjob(struct job_t *job) {
+//     printf("JID: %d, PID: %2d, PGID: %d, STATE: %d, CMD: %s",
+//            job->jid, job->pid, getpgid(job->pid), job->state, job->cmdline);
+// }
 /* End of macros and type definition to avoid VS Code complaining. */
 
 #include <ctype.h>
@@ -54,10 +67,8 @@ struct job_t {             /* The job struct */
 };
 struct job_t jobs[MAXJOBS]; /* The job list */
 
-/* Masks for signal blocking and unblocking */
 sigset_t mask_all, mask_sigchld;
 int fg_terminated = 0;
-
 /* End global variables */
 
 /* Function prototypes */
@@ -103,7 +114,6 @@ void Sigdelset(sigset_t *set, int signum);
 int Sigismember(const sigset_t *set, int signum);
 int Sigsuspend(const sigset_t *set);
 
-static void printjob(struct job_t *job);
 
 /*
  * main - The shell's main routine 
@@ -172,13 +182,6 @@ int main(int argc, char **argv) {
     }
 
     exit(0); /* control never reaches here */
-}
-
-static void print_argv(char **argv) {
-    int i;
-    for (i = 0; i < MAXARGS && argv[i]; ++i) {
-        printf("argv[%d]  %s\n", i, argv[i]);
-    }
 }
 
 /* 
@@ -270,16 +273,9 @@ void do_bgfg(char **argv) {
  */
 void waitfg(pid_t pid) {
     while (1) {
-        int state = FG;
-        for (int i = 0; i < MAXJOBS && jobs[i].pid != 0; ++i) {
-            if (jobs[i].pid == pid) {
-                state = jobs[i].state;
-                break;
-            }
-        }
         int jid = pid2jid(pid);
 
-        if (jid == 0 || state != FG) { /* Job deleted or no longer foreground */
+        if (jid == 0) { /* Job deleted or no longer foreground */
             return;
         }
 
@@ -319,11 +315,6 @@ void sigchld_handler(int sig) {
     errno = old_errno;
 }
 
-static void printjob(struct job_t *job) {
-    printf("JID: %d, PID: %2d, PGID: %d, STATE: %d, CMD: %s",
-           job->jid, job->pid, getpgid(job->pid), job->state, job->cmdline);
-}
-
 /* 
  * sigint_handler - The kernel sends a SIGINT to the shell whenver the
  *    user types ctrl-c at the keyboard.  Catch it and send it along
@@ -343,7 +334,11 @@ void sigint_handler(int sig) {
  *     foreground job by sending it a SIGTSTP.  
  */
 void sigtstp_handler(int sig) {
-    return;
+    for (int i = 0; i < MAXJOBS; ++i) {
+        if (jobs[i].state == FG) {
+            kill(-jobs[i].pid, SIGTSTP);
+        }
+    }
 }
 
 /*********************
