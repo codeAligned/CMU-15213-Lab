@@ -353,7 +353,7 @@ void waitfg(pid_t pid) {
             return;
         }
 
-        sleep(1);
+        sigsuspend(NULL);
     }
 }
 
