@@ -39,6 +39,9 @@
 #define HDRP(bp)       ((char *)(bp) - WSIZE)                      //line:vm:mm:hdrp
 #define FTRP(bp)       ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE) //line:vm:mm:ftrp
 
+/* From CSAPP: 3e: "block ptr" refers to a pointer pointing to the first 
+word of some allocated block. In other words, a block pointer points to the 
+word after the block header.*/
 /* Given block ptr bp, compute address of next and previous blocks */
 #define NEXT_BLKP(bp)  ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE))) //line:vm:mm:nextblkp
 #define PREV_BLKP(bp)  ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE))) //line:vm:mm:prevblkp
@@ -134,9 +137,19 @@ void *mm_malloc(size_t size)
 
     /* Adjust block size to include overhead and alignment reqs. */
     if (size <= DSIZE)                                          //line:vm:mm:sizeadjust1
+        /**
+         * The minimum block size is 16 bytes: 8 bytes to satisfy the alignment requirement,
+         * and 8 more bytes for the overhead of the header and footer.
+         */
         asize = 2*DSIZE;                                        //line:vm:mm:sizeadjust2
     else
         asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE); //line:vm:mm:sizeadjust3
+        /**
+         * For 8 < size <= 16, aszie = 3
+         * For k * DSIZE < size <= (k+1) * DSIZE, asize is the same.
+         * "The general rule is to add the overhead bytes and round to the nearest
+         * multiple of 8.". Overhead bytes = DSIZE.
+         */
 
     /* Search the free list for a fit */
     if ((bp = find_fit(asize)) != NULL) {  //line:vm:mm:findfitcall
@@ -145,7 +158,7 @@ void *mm_malloc(size_t size)
     }
 
     /* No fit found. Get more memory and place the block */
-    extendsize = MAX(asize,CHUNKSIZE);                 //line:vm:mm:growheap1
+    extendsize = MAX(asize, CHUNKSIZE);                 //line:vm:mm:growheap1
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)  
         return NULL;                                  //line:vm:mm:growheap2
     place(bp, asize);                                 //line:vm:mm:growheap3
@@ -183,21 +196,28 @@ void mm_free(void *bp)
 /* $begin mmfree */
 static void *coalesce(void *bp) 
 {
+    // prev_alloc, next_alloc stores whether the previous/next block is allocated or not.
+    // size stores the size of the current block.
     size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size = GET_SIZE(HDRP(bp));
 
     if (prev_alloc && next_alloc) {            /* Case 1 */
+        // Both the previous block and next block are allocated, not coalesce needed.
         return bp;
     }
 
     else if (prev_alloc && !next_alloc) {      /* Case 2 */
+        // The previous block is allocated but the next block is free. 
+        // Coalesce with the next block.
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
         PUT(HDRP(bp), PACK(size, 0));
         PUT(FTRP(bp), PACK(size,0));
     }
 
     else if (!prev_alloc && next_alloc) {      /* Case 3 */
+        // The previous block is free but the next block is allocated. 
+        // Coalesce with the previous block.
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
         PUT(FTRP(bp), PACK(size, 0));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
@@ -205,8 +225,7 @@ static void *coalesce(void *bp)
     }
 
     else {                                     /* Case 4 */
-        size += GET_SIZE(HDRP(PREV_BLKP(bp))) + 
-            GET_SIZE(FTRP(NEXT_BLKP(bp)));
+        size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp)));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
         PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
         bp = PREV_BLKP(bp);
