@@ -12,7 +12,7 @@
  * This is the default path where the driver will look for the
  * default tracefiles. You can override it at runtime with the -t flag.
  */
-#define TRACEDIR "/afs/cs/project/ics2/im/labs/malloclab/traces/"
+#define TRACEDIR "./traces/"
 
 /*
  * This is the list of default tracefiles in TRACEDIR that the driver
@@ -45,20 +45,20 @@
  */
 #define AVG_LIBC_THRUPUT      600E3  /* 600 Kops/sec */
 
- /* 
+ /*
   * This constant determines the contributions of space utilization
   * (UTIL_WEIGHT) and throughput (1 - UTIL_WEIGHT) to the performance
-  * index.  
+  * index.
   */
 #define UTIL_WEIGHT .60
 
-/* 
- * Alignment requirement in bytes (either 4 or 8) 
+/*
+ * Alignment requirement in bytes (either 4 or 8)
  */
-#define ALIGNMENT 8  
+#define ALIGNMENT 8
 
-/* 
- * Maximum heap size in bytes 
+/*
+ * Maximum heap size in bytes
  */
 #define MAX_HEAP (20*(1<<20))  /* 20 MB */
 
