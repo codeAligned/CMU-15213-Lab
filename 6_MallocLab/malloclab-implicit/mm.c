@@ -127,9 +127,9 @@ static void *extend_heap(size_t words);
 static void place(void *bp, size_t asize);
 static void *find_fit(size_t asize);
 static void *coalesce(void *bp);
-// static void printblock(void *bp);
-// static void checkheap(int verbose);
-// static void checkblock(void *bp);
+static void printblock(void *bp);
+static void checkheap(int verbose);
+static void checkblock(void *bp);
 
 /* 
  * mm_init - initialize the malloc package.
@@ -148,6 +148,8 @@ int mm_init(void) {
 
     if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
         return -1;
+
+    checkheap(1);
     return 0;
 }
 
@@ -361,7 +363,7 @@ void *mm_realloc(void *ptr, size_t size) {
 static void printblock(void *bp) {
     size_t hsize, halloc, fsize, falloc;
 
-    checkheap(0);
+    // checkheap(0);
     hsize = GET_SIZE(HDRP(bp));
     halloc = GET_ALLOC(HDRP(bp));
     fsize = GET_SIZE(FTRP(bp));
@@ -407,4 +409,6 @@ void checkheap(int verbose) {
         printblock(bp);
     if ((GET_SIZE(HDRP(bp)) != 0) || !(GET_ALLOC(HDRP(bp))))
         printf("Bad epilogue header\n");
+
+    printf("\n");
 }
