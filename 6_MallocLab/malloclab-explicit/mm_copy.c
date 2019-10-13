@@ -9,55 +9,6 @@
  * 
  * From the lecture slide, "next" and "prev" points to the 
  * header of the next/previous free block.
- * 
- * Performance: 
- * first-fit:
- * 
- * Team Name:FastLearn
-    Member 1 :Fred Yue YIN:yy0125@connect.hku.hk
-    Using default tracefiles in ./traces/
-    Measuring performance with gettimeofday().
-
-    Results for mm malloc:
-    trace  valid  util     ops      secs  Kops
-    0       yes   93%    5694  0.000243 23471
-    1       yes   94%    5848  0.000215 27162
-    2       yes   96%    6648  0.000339 19622
-    3       yes   97%    5380  0.000276 19479
-    4       yes   93%   14400  0.000575 25048
-    5       yes   89%    4800  0.000791  6069
-    6       yes   85%    4800  0.000879  5459
-    7       yes   54%   12000  0.044034   273
-    8       yes   47%   24000  0.038216   628
-    9       yes   31%   14401  0.074412   194
-    10      yes   43%   14401  0.002982  4830
-    Total         75%  112372  0.162962   690
-
-    Perf index = 45 (util) + 40 (thru) = 85/100
- * 
- * best-fit:
- * 
-    Team Name:FastLearn
-    Member 1 :Fred Yue YIN:yy0125@connect.hku.hk
-    Using default tracefiles in ./traces/
-    Measuring performance with gettimeofday().
-
-    Results for mm malloc:
-    trace  valid  util     ops      secs  Kops
-    0       yes   99%    5694  0.000301 18942
-    1       yes   99%    5848  0.000345 16936
-    2       yes   99%    6648  0.000335 19851
-    3       yes   99%    5380  0.000268 20075
-    4       yes   93%   14400  0.000707 20359
-    5       yes   95%    4800  0.004097  1171
-    6       yes   94%    4800  0.004004  1199
-    7       yes   54%   12000  0.044275   271
-    8       yes   47%   24000  0.125662   191
-    9       yes   25%   14401  0.073462   196
-    10      yes   29%   14401  0.003240  4445
-    Total         76%  112372  0.256697   438
-
-    Perf index = 46 (util) + 29 (thru) = 75/100
  */
 #include <assert.h>
 #include <stdint.h>
@@ -87,7 +38,7 @@ team_t team = {
 
 
 // #define DEBUG_MODE
-#define BEST_FIT
+// #define BEST_FIT
 
 #ifdef DEBUG_MODE
     #define mm_checkheap(verbose) checkheap(verbose)
@@ -99,7 +50,7 @@ team_t team = {
 #define DSIZE 8
 #define QSIZE 16
 #define MIN_BLOCKSIZE 24
-#define CHUNKSIZE (1 << 9)
+#define CHUNKSIZE (1 << 12)
 
 #define MAX_INT ((unsigned)((-1) << 1)) >> 1
 
@@ -309,6 +260,8 @@ static void *coalesce(void *bp) {
             // 3. Change pointers of the aggregated block
             PUT(NEXTP(bp), HDRP(free_listp)); /* next points to original head of free list */
             PUT(PREVP(bp), 0);                /* prev points to NULL */
+
+            // Update prev pointer of the original first free block
             PUT(PREVP(free_listp), HDRP(bp));
 
             // 4. Update free list
