@@ -1,7 +1,7 @@
 /*
  * mm-explicit.c
  * 
- * Explicit free list, with FIFO.
+ * Explicit free list, with FIFO. Support first-fit and best-fit.
  * 
  * Scheme: 
  * "predecessor" and "successor" are in terms of heap.
@@ -19,7 +19,6 @@
 
 #include "memlib.h"
 #include "mm.h"
-
 /*********************************************************
  * NOTE TO STUDENTS: Before you do anything else, please
  * provide your team information in the following struct.
@@ -36,8 +35,10 @@ team_t team = {
     /* Second member's email address (leave blank if none) */
     ""};
 
+
+
 // #define debug_mode
-#define best_fit
+// #define best_fit
 
 #ifdef debug_mode
     #define mm_checkheap(verbose) checkheap(verbose)
@@ -50,6 +51,8 @@ team_t team = {
 #define QSIZE 16
 #define MIN_BLOCKSIZE 24
 #define CHUNKSIZE (1 << 12)
+
+#define MAX_INT ((unsigned)((-1) << 1)) >> 1
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 
@@ -160,8 +163,8 @@ static void *extend_heap(size_t words) {
     /* Coalesce if the previous block was free */
     // coalesce() cannot be called until header and footer are property updated.
 
-    // You should call coalesce only on bp that have not been put on the 
-    // free list.
+    // You should call coalesce only on a block pointer that have not been put 
+    // on the free list.
     return coalesce(bp);
 }
 
@@ -177,15 +180,15 @@ static void *coalesce(void *bp) {
     size_t next_alloc = GET_ALLOC(HDRP(SUCC_BLKP(bp)));
     size_t size = GET_SIZE(HDRP(bp));
 
-    if (prev_alloc && next_alloc) {
-        // printf("case 1, neither free\n");
-    } else if (prev_alloc) {
-        // printf("case 2, successor free\n");
-    } else if (next_alloc) {
-        // printf("case 3, predecessor free\n");
-    } else {
-        // printf("case 4, both free\n");
-    }
+    // if (prev_alloc && next_alloc) {
+    //     printf("case 1, neither free\n");
+    // } else if (prev_alloc) {
+    //     printf("case 2, successor free\n");
+    // } else if (next_alloc) {
+    //     printf("case 3, predecessor free\n");
+    // } else {
+    //     printf("case 4, both free\n");
+    // }
 
     if (prev_alloc && next_alloc) { /* Case 1 */
         // Both predcessor and successor are allocated.
@@ -278,7 +281,6 @@ static void *coalesce(void *bp) {
 
         if (PREVV(PRED_BLKP(bp)) && PREVV(SUCC_BLKP(bp))) {
             // printf("coalesce(): case 4.1 \n");
-            
             // Neither predecessor or successor is at the start of the free list
             
             // 2. Change pointers of blocks of predecessor and successor
@@ -457,10 +459,9 @@ static void place(void *bp, size_t asize) {
 
 static void *find_fit(size_t asize) {
     void *bp;
-
 #ifdef best_fit
     void *best_bp = NULL;
-    int diff = ((unsigned)((-1) << 1)) >> 1;
+    int diff = MAX_INT;
 
     for (bp = free_listp; GET_SIZE(HDRP(bp)) > QSIZE; bp = NEXT_BLKP(bp)) {
         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
@@ -473,7 +474,6 @@ static void *find_fit(size_t asize) {
 
     return best_bp ? best_bp : NULL;
 #else
-
     // first fit
     for (bp = free_listp; GET_SIZE(HDRP(bp)) > QSIZE; bp = NEXT_BLKP(bp)) {
         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
