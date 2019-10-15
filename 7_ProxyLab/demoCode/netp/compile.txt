@@ -1,0 +1,8 @@
+To compile hostinfo.c:
+
+https://stackoverflow.com/questions/27575169/why-is-gcc-not-seeing-functions-in-header-file/27575262#27575262
+https://stackoverflow.com/questions/1662909/undefined-reference-to-pthread-create-in-linux
+
+gcc -c csapp.c                                  # Creates csapp.o 
+gcc -c hostinfo.c                               # Creates hostinfo.o 
+gcc -pthread -o hostinfo hostinfo.c csapp.o     # Creates hostinfo
