@@ -33,6 +33,10 @@ int parse_url(char *url, bool verify_host, url_parser_url_t *parsed_url);
  *  [X] Parse request line:
  *      Assumptions made:
  *      a. The request is made by a browser and the URL starts with "http://".
+ *      b. Only HTTP/1.0 and HTTP/1.1 are allowed.
+ *  [] Handle request headers:
+ *      Assumptions made:
+ *      a. The request contains at most MAX_HEADER_NUM headers.
  *  [] Handle malformed client request;
  *  [] Send request to server;
  *  [] Accept response from server;
@@ -44,6 +48,7 @@ int parse_url(char *url, bool verify_host, url_parser_url_t *parsed_url);
 #define MAX_OBJECT_SIZE 102400
 
 #define DEFAULT_PORT 8080
+#define MAX_HEADER_NUM 20
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
@@ -83,18 +88,16 @@ int main(int argc, char **argv) {
 }
 
 void handle_request(int connfd, char *client_hostname, char *client_port) {
-    // int is_static;
     struct stat sbuf;
     char request_line[MAXLINE], method[MAXLINE], url[MAXLINE], version[MAXLINE];
     char host[MAXLINE], uri[MAXLINE], port[MAXLINE];
-    
-    // char filename[MAXLINE], cgiargs[MAXLINE];
     rio_t rio;
 
     Rio_readinitb(&rio, connfd);
     if (!Rio_readlineb(&rio, request_line, MAXLINE))
         return;
 
+    /* Begin of parsing request line */
     printf("%s", request_line);
     sscanf(request_line, "%s %s %s", method, url, version);
 
@@ -109,15 +112,33 @@ void handle_request(int connfd, char *client_hostname, char *client_port) {
     url_parser_url_t *parsed_url = (url_parser_url_t *)malloc(sizeof(url_parser_url_t));
     if (parse_url(url, false, parsed_url)) {
         clienterror(connfd, method, "400", "Bad request",
-                    "Seems like an invalid request");
+                    "Cannot parse URL");
+        return;
     }
 
-    // printf("Host: '%s', Port: '%d', Path: '%s'\n", parsed_url->host, parsed_url->port, parsed_url->path);
     strcpy(host, parsed_url->host);
     strcpy(uri, parsed_url->path);
     sprintf(port, "%d", parsed_url->port);
     free_parsed_url(parsed_url);
     printf("Host: '%s', Port: '%s', URI: '%s'\n", host, port, uri);
+
+    // Check HTTP version
+    if(strcmp("HTTP/1.0", version) && strcmp("HTTP/1.1", version)) {
+        clienterror(connfd, method, "400", "Bad request",
+                    "Invalid HTTP version");
+        return;
+    } else {
+        strcpy(version, "HTTP/1.0");
+    }
+
+    printf("Request to be sent by proxy to server: \n");
+    printf("Server socket address: (%s : %s)\n", host, port);
+    printf("Request: %s %s %s\n", method, uri, version);
+    /* End of parsing request line */
+
+    /* Begin of handling request headers */
+
+    /* End of handling request headers */
 }
 
 void clienterror(int fd, char *cause, char *errnum,
