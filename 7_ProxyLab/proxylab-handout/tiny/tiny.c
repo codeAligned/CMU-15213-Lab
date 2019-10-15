@@ -108,8 +108,8 @@ void read_requesthdrs(rio_t *rp) {
     char buf[MAXLINE];
 
     // Commented out by YY
-    // Rio_readlineb(rp, buf, MAXLINE);
-    // printf("%s", buf);
+    Rio_readlineb(rp, buf, MAXLINE);
+    printf("%s", buf);
     while (strcmp(buf, "\r\n")) {  //line:netp:readhdrs:checkterm
         Rio_readlineb(rp, buf, MAXLINE);
         printf("%s", buf);

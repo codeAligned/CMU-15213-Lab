@@ -34,10 +34,7 @@ int parse_url(char *url, bool verify_host, url_parser_url_t *parsed_url);
  *      Assumptions made:
  *      a. The request is made by a browser and the URL starts with "http://".
  *      b. Only HTTP/1.0 and HTTP/1.1 are allowed.
- *  [] Handle request headers:
- *      Assumptions made:
- *      a. The request contains at most MAX_HEADER_NUM headers.
- *  [] Handle malformed client request;
+ *  [X] Handle request headers:
  *  [] Send request to server;
  *  [] Accept response from server;
  *  [] Send response back to client.
@@ -52,6 +49,8 @@ int parse_url(char *url, bool verify_host, url_parser_url_t *parsed_url);
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
+static const char *conn_hdr = "Connection: close\r\n";
+static const char *proxy_conn_hdr = "Proxy-Connection: close\r\n";
 
 /* Function prototypes. */
 void handle_request(int connfd, char *client_hostname, char *client_port);
@@ -88,9 +87,13 @@ int main(int argc, char **argv) {
 }
 
 void handle_request(int connfd, char *client_hostname, char *client_port) {
-    struct stat sbuf;
+    /* Variables for parsing request line */
     char request_line[MAXLINE], method[MAXLINE], url[MAXLINE], version[MAXLINE];
     char host[MAXLINE], uri[MAXLINE], port[MAXLINE];
+    /* Variables for handling request header */
+    char hdr[MAXLINE];
+    int host_hdr_exist = 0, conn_hdr_exist = 0, proxy_conn_hdr_exist = 0;
+
     rio_t rio;
 
     Rio_readinitb(&rio, connfd);
@@ -123,7 +126,7 @@ void handle_request(int connfd, char *client_hostname, char *client_port) {
     printf("Host: '%s', Port: '%s', URI: '%s'\n", host, port, uri);
 
     // Check HTTP version
-    if(strcmp("HTTP/1.0", version) && strcmp("HTTP/1.1", version)) {
+    if (strcmp("HTTP/1.0", version) && strcmp("HTTP/1.1", version)) {
         clienterror(connfd, method, "400", "Bad request",
                     "Invalid HTTP version");
         return;
@@ -137,7 +140,35 @@ void handle_request(int connfd, char *client_hostname, char *client_port) {
     /* End of parsing request line */
 
     /* Begin of handling request headers */
+    while (1) {
+        Rio_readlineb(&rio, hdr, MAXLINE);
+        if (!strcmp(hdr, "\r\n")) {
+            break;
+        }
+        if (strstr(hdr, "Host:")) {
+            host_hdr_exist = 1;
+            printf("%s", hdr);
+        } else if (strstr(hdr, "Connection:")) {
+            conn_hdr_exist = 1;
+            printf("%s", conn_hdr);
+        } else if (strstr(hdr, "Proxy connection:")) {
+            proxy_conn_hdr_exist = 1;
+            printf("%s", proxy_conn_hdr);
+        } else {
+            printf("%s", hdr);
+        }
+    }
 
+    printf("%s", user_agent_hdr);
+    if (!host_hdr_exist) {
+        printf("Host: %s\r\n", host);
+    } 
+    if (!conn_hdr_exist) {
+        printf("%s", conn_hdr);
+    }
+    if (!proxy_conn_hdr_exist) {
+        printf("%s", proxy_conn_hdr);
+    }
     /* End of handling request headers */
 }
 
