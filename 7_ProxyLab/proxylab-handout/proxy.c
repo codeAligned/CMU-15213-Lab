@@ -1,21 +1,7 @@
-#include <stdio.h>
-#include "csapp.h"
-
-#define DEBUG() printf("%d\n", __LINE__)
-/* Begin: header and declaration for url parser */
-/* https://stackoverflow.com/a/51906794/9057530 */
-typedef struct url_info {
-    char *protocol;
-    char *host;
-    char *port;
-    char *path;
-} URL_INFO;
-
-URL_INFO *split_url(URL_INFO *info, const char *url);
-/* End: header and declaration for url parser */
-
-/*
- * Iterative -> Concurrent -> Cache proxy.
+/** 
+ * proxy.c 
+ * 
+ * Iterative -> Concurrent -> Cache proxy
  * 
  * 1. Iterative
  *  [X] Echo server
@@ -36,24 +22,27 @@ URL_INFO *split_url(URL_INFO *info, const char *url);
  *      http://www.washington.edu/
  *  [X] Send response back ts client;
  * 
- * Before implementing caching, do not need to worry about thread-safety. The
- * reading, parsing and storing of request headers does not involve shared
- * variables.
- * 
  * 2. Concurrent
  * Very similar to the code in lecture slide "23-concprog.pdf" page 29-30. 
  * Need to modify "./nop-server.py" to be "python3 ./nop-server.py" to make
  * driver.sh run correctly.
  * 
+ * 3. Cache proxy
+ * The writeup specifies that the size of the entire cache is at most 1049000
+ * bytes and the max cachable web object is 102400 bytes. This would a fully 
+ * assiciative cache: only one set and any web object can be matched to any
+ * cache line. 1049000 / 102400 = 10, so there would be 10 cache lines.
  */
+
+#include <stdio.h>
+#include "csapp.h"
+#include "url_parser.h"
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
 
-#define DEFAULT_PORT 8080
-#define MAX_HEADER_NUM 20
-
+#define DEFAULT_PORT_STR "8888"
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 static const char *conn_hdr = "Connection: close\r\n";
@@ -82,7 +71,7 @@ int main(int argc, char **argv) {
     if (argc == 2) {
         strcpy(proxy_port, argv[1]);
     } else {
-        strcpy(proxy_port, "8888");
+        strcpy(proxy_port, DEFAULT_PORT_STR);
     }
 
     listenfd = Open_listenfd(proxy_port);
@@ -120,6 +109,7 @@ void *serve(void *proxy_clientfd_p) {
 
     Rio_readinitb(&client_rio, proxy_clientfd);
     parse_client_request(&client_rio, parsed_request, host, port, uri);
+    printf("\n### Parsed request ###\n%s", parsed_request);
     proxy_serverfd = resend_request(&client_rio, &server_rio,
                                     parsed_request, host, port);
 
@@ -129,7 +119,7 @@ void *serve(void *proxy_clientfd_p) {
             Rio_writen(client_rio.rio_fd, buf, MAXLINE);
         }
     }
-    
+
     if (proxy_clientfd_p) {
         free(proxy_clientfd_p);
     }
@@ -252,6 +242,20 @@ void parse_hdr(rio_t *rp, char *parsed_request, char *host) {
     strcat(parsed_request, "\r\n");
 }
 
+/**
+ * hash_func - Hash function to be applied to the request. Borrowed from: 
+ *             https://stackoverflow.com/a/7666577/9057530
+ */
+unsigned long hash_func(char *str) {
+    unsigned long res = 5381;
+    int c;
+
+    while (c = *str++)
+        res = ((res << 5) + res) + c; /* hash * 33 + c */
+
+    return res;
+}
+
 void clienterror(int fd, char *cause, char *errnum,
                  char *shortmsg, char *longmsg) {
     char buf[MAXLINE], body[MAXBUF];
@@ -276,50 +280,3 @@ void clienterror(int fd, char *cause, char *errnum,
     Rio_writen(fd, buf, strlen(buf));
     Rio_writen(fd, body, strlen(body));
 }
-
-/* Begin of code for url_parser */
-URL_INFO *split_url(URL_INFO *info, const char *url) {
-    if (!info || !url)
-        return NULL;
-    info->protocol = strtok(strcpy((char *)malloc(strlen(url) + 1), url),
-                            "://");
-    info->host = strstr(url, "://");
-    if (info->host) {
-        info->host += 3;
-        char *host_port_path = strcpy((char *)calloc(1, strlen(info->host) + 1),
-                                      info->host);
-        info->host = strtok(host_port_path, ":");
-        info->host = strtok(host_port_path, "/");
-    } else {
-        char *host_port_path = strcpy((char *)calloc(1, strlen(url) + 1), url);
-        info->host = strtok(host_port_path, ":");
-        info->host = strtok(host_port_path, "/");
-    }
-    char *URL = strcpy((char *)malloc(strlen(url) + 1), url);
-    info->port = strstr(URL + 6, ":");
-    char *port_path = 0;
-    char *port_path_copy = 0;
-    if (info->port && isdigit(*(port_path = (char *)info->port + 1))) {
-        port_path_copy = strcpy((char *)malloc(strlen(port_path) + 1),
-                                port_path);
-        char *r = strtok(port_path, "/");
-        if (r)
-            info->port = r;
-        else
-            info->port = port_path;
-    } else
-        info->port = "80";
-    if (port_path_copy)
-        info->path = port_path_copy + strlen(info->port ? info->port : "");
-    else {
-        char *path = strstr(URL + 8, "/");
-        info->path = path ? path : "/";
-    }
-    int r = strcmp(info->protocol, info->host) == 0;
-    if (r && strcmp(info->port, "80") == 0)
-        info->protocol = "http";
-    else if (r)
-        info->protocol = "tcp";
-    return info;
-}
-/* End of code for url_parser */
