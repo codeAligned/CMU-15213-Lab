@@ -46,7 +46,7 @@ int parse_url(char *url, bool verify_host, url_parser_url_t *parsed_url);
  *      http://www.nyu.edu/
  *      http://go.com/
  *      http://www.washington.edu/
- *  [] Send response back to client;
+ *  [X] Send response back ts client;
  * 
  * Before implementing caching, do not need to worry about thread-safety. The
  * reading, parsing and storing of request headers does not involve shared
@@ -67,10 +67,13 @@ static const char *proxy_conn_hdr = "Proxy-Connection: close\r\n";
 
 /* Function prototypes. */
 void serve(int proxy_connfd);
-void parse_client_request(int proxy_connfd, char *parsed_request, char *host, char *port);
+void parse_client_request(rio_t *client_rp, char *parsed_request,
+                          char *host, char *port);
 void parse_hdr(rio_t *rp, char *parsed_request, char *host);
-void parse_request_line(int proxy_connfd, rio_t *rp, char *parsed_request,
+void parse_request_line(rio_t *client_rp, char *parsed_request,
                         char *host, char *port);
+void resend_request(rio_t *client_rp, char *parsed_request,
+                    char *host, char *port);
 void clienterror(int fd, char *cause, char *errnum,
                  char *shortmsg, char *longmsg);
 
@@ -99,6 +102,7 @@ int main(int argc, char **argv) {
                     client_port, MAXLINE, 0);
         printf("Connected to (%s, %s)\n", client_hostname, client_port);
         serve(proxy_connfd);
+        printf("Close connection to (%s, %s)\n", client_hostname, client_port);
         Close(proxy_connfd);
     }
     exit(0);
@@ -106,55 +110,52 @@ int main(int argc, char **argv) {
 
 void serve(int proxy_connfd) {
     char parsed_request[MAXLINE], host[MAXLINE], port[MAXLINE];
-    parse_client_request(proxy_connfd, parsed_request, host, port);
+    rio_t client_rio; /* The rio used by proxy to communicate with client */
+    Rio_readinitb(&client_rio, proxy_connfd);
+
+    parse_client_request(&client_rio, parsed_request, host, port);
     printf("%s", parsed_request);
-    resend_request(proxy_connfd, parsed_request, host, port);
+    resend_request(&client_rio, parsed_request, host, port);
 }
 
-void resend_request(int proxy_connfd, char *parsed_request,
+void resend_request(rio_t *client_rp, char *parsed_request,
                     char *host, char *port) {
     int proxy_clientfd; /* Used by proxy as a client fd to connect to server */
     rio_t rio;
     char buf[MAXLINE];
 
     if ((proxy_clientfd = open_clientfd(host, port)) < 0) {
-        clienterror(proxy_connfd, "GET", "400", "Bad request",
+        clienterror(client_rp->rio_fd, "GET", "400", "Bad request",
                     "Fail to connect");
     }
-    printf("proxy_clientfd: %d\n", proxy_clientfd);
 
     Rio_readinitb(&rio, proxy_clientfd);
-    printf("--\n%s", parsed_request);
-    printf("length: %d\n", strlen(parsed_request));
     Rio_writen(proxy_clientfd, parsed_request, strlen(parsed_request));
-    while(Rio_readlineb(&rio, buf, MAXLINE) > 0) {
-        Fputs(buf, stdout);
+    while (Rio_readlineb(&rio, buf, MAXLINE) > 0) {
+        Rio_writen(client_rp->rio_fd, buf, strlen(buf));
     }
     Close(proxy_clientfd);
 }
 
-
-void parse_client_request(int proxy_connfd, char *parsed_request,
-                   char *host, char *port) {
-    rio_t rio;
-    Rio_readinitb(&rio, proxy_connfd);
-    parse_request_line(proxy_connfd, &rio, parsed_request, host, port);
-    parse_hdr(&rio, parsed_request, host);
+void parse_client_request(rio_t *client_rp, char *parsed_request,
+                          char *host, char *port) {
+    parse_request_line(client_rp, parsed_request, host, port);
+    parse_hdr(client_rp, parsed_request, host);
 }
 
-void parse_request_line(int proxy_connfd, rio_t *rp, char *parsed_request,
+void parse_request_line(rio_t *client_rp, char *parsed_request,
                         char *host, char *port) {
     char request_line[MAXLINE];
     char method[MAXLINE], url[MAXLINE], version[MAXLINE], uri[MAXLINE];
 
-    if (!Rio_readlineb(rp, request_line, MAXLINE))
+    if (!Rio_readlineb(client_rp, request_line, MAXLINE))
         return;
 
     sscanf(request_line, "%s %s %s", method, url, version);
 
     // Check request method
     if (strcasecmp(method, "GET")) {
-        clienterror(proxy_connfd, method, "501", "Not Implemented",
+        clienterror(client_rp->rio_fd, method, "501", "Not Implemented",
                     "The proxy does not implement this method");
         return;
     }
@@ -162,7 +163,7 @@ void parse_request_line(int proxy_connfd, rio_t *rp, char *parsed_request,
     // Parse hostname and URI from URL
     url_parser_url_t *parsed_url = (url_parser_url_t *)malloc(sizeof(url_parser_url_t));
     if (parse_url(url, false, parsed_url)) {
-        clienterror(proxy_connfd, method, "400", "Bad request",
+        clienterror(client_rp->rio_fd, method, "400", "Bad request",
                     "Cannot parse URL");
         return;
     }
@@ -174,7 +175,7 @@ void parse_request_line(int proxy_connfd, rio_t *rp, char *parsed_request,
 
     // Check HTTP version
     if (strcmp("HTTP/1.0", version) && strcmp("HTTP/1.1", version)) {
-        clienterror(proxy_connfd, method, "400", "Bad request",
+        clienterror(client_rp->rio_fd, method, "400", "Bad request",
                     "Invalid HTTP version");
         return;
     } else {
