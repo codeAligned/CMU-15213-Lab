@@ -2,7 +2,7 @@
 #include "csapp.h"
 
 #define DEBUG() printf("%d\n", __LINE__)
-/* Begin: header and declaration for url_parser */
+/* Begin: header and declaration for url parser */
 /* https://stackoverflow.com/a/51906794/9057530 */
 typedef struct url_info {
     char *protocol;
@@ -12,8 +12,7 @@ typedef struct url_info {
 } URL_INFO;
 
 URL_INFO *split_url(URL_INFO *info, const char *url);
-
-/* Begin: header and declaration for url_parser */
+/* End: header and declaration for url parser */
 
 /*
  * Iterative -> Concurrent -> Cache proxy.
@@ -65,7 +64,6 @@ int resend_request(rio_t *client_rp, rio_t *server_rp, char *parsed_request,
                    char *host, char *port);
 void clienterror(int fd, char *cause, char *errnum,
                  char *shortmsg, char *longmsg);
-void get_filetype(char *filename, char *filetype);
 
 int main(int argc, char **argv) {
     int listenfd, proxy_clientfd;
@@ -85,7 +83,7 @@ int main(int argc, char **argv) {
 
     while (1) {
         clientlen = sizeof(struct sockaddr_storage);
-        /* proxy_clientfd: used by proxy serve client */
+        /* proxy_clientfd: used by proxy to serve client */
         proxy_clientfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
         Getnameinfo((SA *)&clientaddr, clientlen,
                     client_hostname, MAXLINE,
@@ -98,10 +96,13 @@ int main(int argc, char **argv) {
     exit(0);
 }
 
+/**
+ * serve - parse request from client, send the parsed request to server, and 
+ *         send the result back to client.
+ */
 void serve(int proxy_clientfd) {
     char parsed_request[MAXLINE];
     char host[MAXLINE], port[MAXLINE], uri[MAXLINE];
-    char filetype[MAXLINE];
     char buf[MAXLINE];
     rio_t client_rio; /* rio used by proxy to communicate with client */
     rio_t server_rio; /* rio used by proxy to communicate with client */
@@ -109,26 +110,25 @@ void serve(int proxy_clientfd) {
 
     Rio_readinitb(&client_rio, proxy_clientfd);
     parse_client_request(&client_rio, parsed_request, host, port, uri);
-    printf("%s", parsed_request);
     proxy_serverfd = resend_request(&client_rio, &server_rio,
                                     parsed_request, host, port);
+
+    /* Send response from server back to client */
     if (proxy_serverfd > 0) {
-        get_filetype(uri, filetype);
-        if (strcmp(filetype, "text/html")) {
-            // Binary file type
-            while (Rio_readnb(&server_rio, buf, MAXLINE) > 0) {
-                Rio_writen(client_rio.rio_fd, buf, MAXLINE);
-            }
-        } else {
-            // String file type
-            while (Rio_readlineb(&server_rio, buf, MAXLINE) > 0) {
-                Rio_writen(client_rio.rio_fd, buf, strlen(buf));
-            }
+        while (Rio_readnb(&server_rio, buf, MAXLINE) > 0) {
+            Rio_writen(client_rio.rio_fd, buf, MAXLINE);
         }
         Close(proxy_serverfd);
     }
 }
 
+/**
+ * resend_request - Try to connect to the server at host:port and send the 
+ *                  parsed request in char *parsed_request to it. 
+ * 
+ * Return value: -1, if fail to connect to server.
+ *               proxy_serverfd, if succeed.
+ */
 int resend_request(rio_t *client_rp, rio_t *server_rp, char *parsed_request,
                    char *host, char *port) {
     int proxy_serverfd; /* Used by proxy to connect to server */
@@ -144,12 +144,20 @@ int resend_request(rio_t *client_rp, rio_t *server_rp, char *parsed_request,
     return proxy_serverfd;
 }
 
+/**
+ * parse_client_request - Parse the request from client, store in string 
+ *                        pointed to by char *parsed_request.
+ */
 void parse_client_request(rio_t *client_rp, char *parsed_request,
                           char *host, char *port, char *uri) {
     parse_request_line(client_rp, parsed_request, host, port, uri);
     parse_hdr(client_rp, parsed_request, host);
 }
 
+/**
+ * parse_request_line - Parse the request line and store it in 
+ *                      char *parsed_request. 
+ */
 void parse_request_line(rio_t *client_rp, char *parsed_request,
                         char *host, char *port, char *uri) {
     char request_line[MAXLINE];
@@ -185,6 +193,9 @@ void parse_request_line(rio_t *client_rp, char *parsed_request,
     sprintf(parsed_request, "%s %s %s\r\n", method, uri, version);
 }
 
+/**
+ * parse_hdr - Parse the request header and store it in char *parsed_request. 
+ */
 void parse_hdr(rio_t *rp, char *parsed_request, char *host) {
     char hdr[MAXLINE];
     int host_hdr_exist = 0, conn_hdr_exist = 0, proxy_conn_hdr_exist = 0;
@@ -221,19 +232,6 @@ void parse_hdr(rio_t *rp, char *parsed_request, char *host) {
         strcat(parsed_request, proxy_conn_hdr);
     }
     strcat(parsed_request, "\r\n");
-}
-
-void get_filetype(char *filename, char *filetype) {
-    if (strstr(filename, ".html"))
-        strcpy(filetype, "text/html");
-    else if (strstr(filename, ".gif"))
-        strcpy(filetype, "image/gif");
-    else if (strstr(filename, ".png"))
-        strcpy(filetype, "image/png");
-    else if (strstr(filename, ".jpg"))
-        strcpy(filetype, "image/jpeg");
-    else
-        strcpy(filetype, "text/plain");
 }
 
 void clienterror(int fd, char *cause, char *errnum,
