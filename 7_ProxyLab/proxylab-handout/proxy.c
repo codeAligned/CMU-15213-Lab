@@ -32,21 +32,45 @@
  * bytes and the max cachable web object is 102400 bytes. This would a fully 
  * assiciative cache: only one set and any web object can be matched to any
  * cache line. 1049000 / 102400 = 10, so there would be 10 cache lines.
+ * 
+ * If the web object is smaller than the maximum size, put into cache, with
+ * the hash value of the parsed_request as key. Use timestamp to implement the
+ * LRU eviction policy.
+ * 
+ * Because Pthread_create only allows passing one argument of type (void *), but
+ * we need to pass cache and proxy_clientfd_p, we define a struct to combine
+ * them together.
  */
 
 #include <stdio.h>
 #include "csapp.h"
 #include "url_parser.h"
 
+// #define USE_CACHE
+
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
-
+#define CACHE_LINE_NUM (MAX_CACHE_SIZE / MAX_OBJECT_SIZE)
 #define DEFAULT_PORT_STR "8888"
-/* You won't lose style points for including this long line in your code */
+
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 static const char *conn_hdr = "Connection: close\r\n";
 static const char *proxy_conn_hdr = "Proxy-Connection: close\r\n";
+
+/* Defined structs */
+typedef struct cache_line {
+    char content[MAX_OBJECT_SIZE]; /* Stored web object */
+    long length;                   /* Actual length of web object */
+    unsigned long long timestamp;  /* To perform LRU */
+    unsigned long hash;            /* Hash value of the request header */
+    int valid_bit;                 /* Valid bit */
+} cache_line_t;
+
+typedef struct combined {
+    cache_line_t *cache;
+    int *proxy_clientfd_p;
+} combined_t;
 
 /* Function prototypes. */
 void *serve(void *proxy_clientfd_p);
@@ -59,6 +83,22 @@ int resend_request(rio_t *client_rp, rio_t *server_rp, char *parsed_request,
                    char *host, char *port);
 void clienterror(int fd, char *cause, char *errnum,
                  char *shortmsg, char *longmsg);
+void cache_init(cache_line_t *cache);
+unsigned long hash_func(char *str);
+int check_cache(cache_line_t *cache, unsigned long target);
+
+void cache_init(cache_line_t *cache) {
+    int i;
+    cache_line_t *p;
+
+    cache = Calloc(CACHE_LINE_NUM, sizeof(cache_line_t));
+    for (p = cache, i = 0; i < CACHE_LINE_NUM; ++i, ++p) {
+        p->length = 0;
+        p->timestamp = 0;
+        p->hash = 0;
+        p->valid_bit = 0;
+    }
+}
 
 int main(int argc, char **argv) {
     int listenfd, *proxy_clientfd_p;
@@ -66,16 +106,19 @@ int main(int argc, char **argv) {
     struct sockaddr_storage clientaddr;
     char client_hostname[MAXLINE], client_port[MAXLINE];
     char proxy_port[MAXLINE];
+
+    /* Variables related to threading */
     pthread_t tid;
+    cache_line_t *cache = NULL;
+    combined_t *args;
 
-    if (argc == 2) {
-        strcpy(proxy_port, argv[1]);
-    } else {
-        strcpy(proxy_port, DEFAULT_PORT_STR);
-    }
-
+    /* Determine proxy port */
+    strcpy(proxy_port, (argc == 2) ? argv[1] : DEFAULT_PORT_STR);
     listenfd = Open_listenfd(proxy_port);
     printf("Proxy listening on port: %s\n", proxy_port);
+
+    /* Init proxy cache */
+    cache_init(cache);
 
     while (1) {
         clientlen = sizeof(struct sockaddr_storage);
@@ -86,9 +129,15 @@ int main(int argc, char **argv) {
                     client_hostname, MAXLINE,
                     client_port, MAXLINE, 0);
         printf("Connected to (%s, %s)\n", client_hostname, client_port);
-
-        Pthread_create(&tid, NULL, serve, proxy_clientfd_p);
+        
+        args = Malloc(sizeof(combined_t));
+        args->cache = cache;
+        args->proxy_clientfd_p = proxy_clientfd_p;
+        Pthread_create(&tid, NULL, serve, (void *)args);
     }
+
+    /* Free proxy cache */
+    free(cache);
     exit(0);
 }
 
@@ -96,10 +145,17 @@ int main(int argc, char **argv) {
  * serve - parse request from client, send the parsed request to server, and 
  *         send the result back to client.
  */
-void *serve(void *proxy_clientfd_p) {
+void *serve(void *vargs) {
     Pthread_detach(Pthread_self());
+    combined_t args = *((combined_t *)vargs);
+    free((combined_t *)vargs);
+    int proxy_clientfd = *((int *)args.proxy_clientfd_p);
+    cache_line_t *cache = (cache_line_t *)args.cache;
+    // TODO: debug: this line cause seg fault.
+    // printf("%d\n", cache->valid_bit);
+    unsigned long request_hash;
+    int matched_cache_line_idx;
 
-    int proxy_clientfd = *((int *)proxy_clientfd_p);
     char parsed_request[MAXLINE];
     char host[MAXLINE], port[MAXLINE], uri[MAXLINE];
     char buf[MAXLINE];
@@ -109,30 +165,71 @@ void *serve(void *proxy_clientfd_p) {
 
     Rio_readinitb(&client_rio, proxy_clientfd);
     parse_client_request(&client_rio, parsed_request, host, port, uri);
-    printf("\n### Parsed request ###\n%s", parsed_request);
+    request_hash = hash_func(parsed_request);
+    printf("\n## Parsed request [hash = %lu] ##\n%s",
+           request_hash, parsed_request);
+
+#ifdef USE_CACHE
+    if ((matched_cache_line_idx = check_cache(cache, request_hash)) >= 0) {
+        /* Cache hit: send cached object to client */
+        Rio_writen(client_rio.rio_fd,
+                   (cache + matched_cache_line_idx)->content,
+                   (cache + matched_cache_line_idx)->length);
+    } else {
+        /* Cache miss: send request to server, get response, send to client */
+        proxy_serverfd = resend_request(&client_rio, &server_rio,
+                                        parsed_request, host, port);
+
+        /* Send response from server to client */
+        if (proxy_serverfd > 0) {
+            while (Rio_readnb(&server_rio, buf, MAXLINE) > 0) {
+                Rio_writen(client_rio.rio_fd, buf, MAXLINE);
+            }
+        }
+    }
+#else
     proxy_serverfd = resend_request(&client_rio, &server_rio,
                                     parsed_request, host, port);
 
-    /* Send response from server back to client */
+    /* Send response from server to client */
     if (proxy_serverfd > 0) {
         while (Rio_readnb(&server_rio, buf, MAXLINE) > 0) {
             Rio_writen(client_rio.rio_fd, buf, MAXLINE);
         }
     }
-
-    if (proxy_clientfd_p) {
-        free(proxy_clientfd_p);
-    }
+#endif
 
     // Closing file descriptors
     Close(proxy_serverfd);
     Close(proxy_clientfd);
+
     return NULL;
+}
+
+/**
+ * check_cache - Search cache by checking valid bit and hash value. Return the
+ *               index of cache line if there is a match. Otherwise return -1.
+ *
+ * TODO: This function currently cause Segmentation Fault
+ */
+int check_cache(cache_line_t *cache, unsigned long target) {
+    int i;
+    cache_line_t *p;
+
+    for (p = cache, i = 0; i < CACHE_LINE_NUM; ++i, ++p) {
+        // if (p->valid_bit == 1 && p->hash == target) {
+        //     return i;
+        // }
+    }
+
+    return -1;
 }
 
 /**
  * resend_request - Try to connect to the server at host:port and send the 
  *                  parsed request in char *parsed_request to it. 
+ *                  This function would also init the server_rio, passed in
+ *                  through a pointer, if succeed.
  * 
  * Return value: -1, if fail to connect to server.
  *               proxy_serverfd, if succeed.
@@ -250,7 +347,7 @@ unsigned long hash_func(char *str) {
     unsigned long res = 5381;
     int c;
 
-    while (c = *str++)
+    while ((c = *(str++)))
         res = ((res << 5) + res) + c; /* hash * 33 + c */
 
     return res;
