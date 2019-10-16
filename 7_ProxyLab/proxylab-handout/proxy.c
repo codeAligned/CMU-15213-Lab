@@ -46,7 +46,7 @@
 #include "csapp.h"
 #include "url_parser.h"
 
-// #define USE_CACHE
+#define USE_CACHE
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
@@ -83,16 +83,16 @@ int resend_request(rio_t *client_rp, rio_t *server_rp, char *parsed_request,
                    char *host, char *port);
 void clienterror(int fd, char *cause, char *errnum,
                  char *shortmsg, char *longmsg);
-void cache_init(cache_line_t *cache);
+void cache_init(cache_line_t **cache_p);
 unsigned long hash_func(char *str);
 int check_cache(cache_line_t *cache, unsigned long target);
 
-void cache_init(cache_line_t *cache) {
+void cache_init(cache_line_t **cache_p) {
     int i;
     cache_line_t *p;
 
-    cache = Calloc(CACHE_LINE_NUM, sizeof(cache_line_t));
-    for (p = cache, i = 0; i < CACHE_LINE_NUM; ++i, ++p) {
+    *cache_p = Calloc(CACHE_LINE_NUM, sizeof(cache_line_t));
+    for (p = *cache_p, i = 0; i < CACHE_LINE_NUM; ++i, ++p) {
         p->length = 0;
         p->timestamp = 0;
         p->hash = 0;
@@ -118,7 +118,7 @@ int main(int argc, char **argv) {
     printf("Proxy listening on port: %s\n", proxy_port);
 
     /* Init proxy cache */
-    cache_init(cache);
+    cache_init(&cache);
 
     while (1) {
         clientlen = sizeof(struct sockaddr_storage);
@@ -129,7 +129,7 @@ int main(int argc, char **argv) {
                     client_hostname, MAXLINE,
                     client_port, MAXLINE, 0);
         printf("Connected to (%s, %s)\n", client_hostname, client_port);
-        
+
         args = Malloc(sizeof(combined_t));
         args->cache = cache;
         args->proxy_clientfd_p = proxy_clientfd_p;
@@ -151,8 +151,6 @@ void *serve(void *vargs) {
     free((combined_t *)vargs);
     int proxy_clientfd = *((int *)args.proxy_clientfd_p);
     cache_line_t *cache = (cache_line_t *)args.cache;
-    // TODO: debug: this line cause seg fault.
-    // printf("%d\n", cache->valid_bit);
     unsigned long request_hash;
     int matched_cache_line_idx;
 
@@ -217,9 +215,11 @@ int check_cache(cache_line_t *cache, unsigned long target) {
     cache_line_t *p;
 
     for (p = cache, i = 0; i < CACHE_LINE_NUM; ++i, ++p) {
-        // if (p->valid_bit == 1 && p->hash == target) {
-        //     return i;
-        // }
+        if (p->valid_bit == 1 && p->hash == target) {
+            /* TODO: update timestamp with sync lock */
+
+            return i;
+        }
     }
 
     return -1;
