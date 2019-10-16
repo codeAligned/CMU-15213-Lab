@@ -768,14 +768,14 @@ ssize_t rio_writen(int fd, void *usrbuf, size_t n)
     char *bufp = usrbuf;
 
     while (nleft > 0) {
-	if ((nwritten = write(fd, bufp, nleft)) <= 0) {
-	    if (errno == EINTR)  /* Interrupted by sig handler return */
-		nwritten = 0;    /* and call write() again */
-	    else
-		return -1;       /* errno set by write() */
-	}
-	nleft -= nwritten;
-	bufp += nwritten;
+        if ((nwritten = write(fd, bufp, nleft)) <= 0) {
+            if (errno == EINTR)  /* Interrupted by sig handler return */
+                nwritten = 0;    /* and call write() again */
+            else
+                return -1;       /* errno set by write() */
+        }
+        nleft -= nwritten;
+        bufp += nwritten;
     }
     return n;
 }
@@ -866,14 +866,14 @@ ssize_t rio_readlineb(rio_t *rp, void *usrbuf, size_t maxlen)
         if ((rc = rio_read(rp, &c, 1)) == 1) {
 	    *bufp++ = c;
 	    if (c == '\n') {
-                n++;
+            n++;
      		break;
-            }
+        }
 	} else if (rc == 0) {
 	    if (n == 1)
-		return 0; /* EOF, no data read */
+		    return 0; /* EOF, no data read */
 	    else
-		break;    /* EOF, some data was read */
+		    break;    /* EOF, some data was read */
 	} else
 	    return -1;	  /* Error */
     }
@@ -963,7 +963,7 @@ int open_clientfd(char *hostname, char *port) {
             fprintf(stderr, "open_clientfd: close failed: %s\n", strerror(errno));
             return -1;
         } 
-    } 
+    }
 
     /* Clean up */
     freeaddrinfo(listp);
@@ -1026,7 +1026,7 @@ int open_listenfd(char *port)
     /* Make it a listening socket ready to accept connection requests */
     if (listen(listenfd, LISTENQ) < 0) {
         close(listenfd);
-	return -1;
+	    return -1;
     }
     return listenfd;
 }
