@@ -41,7 +41,9 @@ URL_INFO *split_url(URL_INFO *info, const char *url);
  * variables.
  * 
  * 2. Concurrent
- * 
+ * Very similar to the code in lecture slide "23-concprog.pdf" page 29-30. 
+ * Need to modify "./nop-server.py" to be "python3 ./nop-server.py" to make
+ * driver.sh run correctly.
  * 
  */
 
@@ -58,7 +60,7 @@ static const char *conn_hdr = "Connection: close\r\n";
 static const char *proxy_conn_hdr = "Proxy-Connection: close\r\n";
 
 /* Function prototypes. */
-void serve(int proxy_clientfd);
+void *serve(void *proxy_clientfd_p);
 void parse_client_request(rio_t *client_rp, char *parsed_request,
                           char *host, char *port, char *uri);
 void parse_hdr(rio_t *rp, char *parsed_request, char *host);
@@ -70,16 +72,17 @@ void clienterror(int fd, char *cause, char *errnum,
                  char *shortmsg, char *longmsg);
 
 int main(int argc, char **argv) {
-    int listenfd, proxy_clientfd;
+    int listenfd, *proxy_clientfd_p;
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
     char client_hostname[MAXLINE], client_port[MAXLINE];
     char proxy_port[MAXLINE];
+    pthread_t tid;
 
     if (argc == 2) {
         strcpy(proxy_port, argv[1]);
     } else {
-        strcpy(proxy_port, "8080");
+        strcpy(proxy_port, "8888");
     }
 
     listenfd = Open_listenfd(proxy_port);
@@ -88,14 +91,14 @@ int main(int argc, char **argv) {
     while (1) {
         clientlen = sizeof(struct sockaddr_storage);
         /* proxy_clientfd: used by proxy to serve client */
-        proxy_clientfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
+        proxy_clientfd_p = malloc(sizeof(int));
+        *proxy_clientfd_p = Accept(listenfd, (SA *)&clientaddr, &clientlen);
         Getnameinfo((SA *)&clientaddr, clientlen,
                     client_hostname, MAXLINE,
                     client_port, MAXLINE, 0);
         printf("Connected to (%s, %s)\n", client_hostname, client_port);
-        serve(proxy_clientfd);
-        printf("Close connection to (%s, %s)\n", client_hostname, client_port);
-        Close(proxy_clientfd);
+
+        Pthread_create(&tid, NULL, serve, proxy_clientfd_p);
     }
     exit(0);
 }
@@ -104,7 +107,10 @@ int main(int argc, char **argv) {
  * serve - parse request from client, send the parsed request to server, and 
  *         send the result back to client.
  */
-void serve(int proxy_clientfd) {
+void *serve(void *proxy_clientfd_p) {
+    Pthread_detach(Pthread_self());
+
+    int proxy_clientfd = *((int *)proxy_clientfd_p);
     char parsed_request[MAXLINE];
     char host[MAXLINE], port[MAXLINE], uri[MAXLINE];
     char buf[MAXLINE];
@@ -122,8 +128,16 @@ void serve(int proxy_clientfd) {
         while (Rio_readnb(&server_rio, buf, MAXLINE) > 0) {
             Rio_writen(client_rio.rio_fd, buf, MAXLINE);
         }
-        Close(proxy_serverfd);
     }
+    
+    if (proxy_clientfd_p) {
+        free(proxy_clientfd_p);
+    }
+
+    // Closing file descriptors
+    Close(proxy_serverfd);
+    Close(proxy_clientfd);
+    return NULL;
 }
 
 /**
