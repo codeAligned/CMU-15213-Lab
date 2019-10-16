@@ -2,7 +2,7 @@
 #include "csapp.h"
 
 /* Begin: header and declaration for url_parser */
-// https://github.com/jaysonsantos/url-parser-c
+/* https://github.com/jaysonsantos/url-parser-c */
 #include <arpa/inet.h>
 #include <assert.h>
 #include <netdb.h>
@@ -25,7 +25,7 @@ void free_parsed_url(url_parser_url_t *url_parsed);
 int parse_url(char *url, bool verify_host, url_parser_url_t *parsed_url);
 /* Begin: header and declaration for url_parser */
 
-/**
+/*
  * Iterative -> Concurrent -> Cache proxy.
  * 
  * 1. Iterative
@@ -37,7 +37,11 @@ int parse_url(char *url, bool verify_host, url_parser_url_t *parsed_url);
  *  [X] Handle request headers:
  *  [] Send request to server;
  *  [] Accept response from server;
- *  [] Send response back to client.
+ *  [] Send response back to client.\
+ * 
+ * Before implementing caching, do not need to worry about thread-safety. The
+ * reading, parsing and storing of request headers does not involve shared
+ * variables.
  * /
 
 /* Recommended max cache and object sizes */
@@ -53,9 +57,11 @@ static const char *conn_hdr = "Connection: close\r\n";
 static const char *proxy_conn_hdr = "Proxy-Connection: close\r\n";
 
 /* Function prototypes. */
-void handle_request(int connfd, char *client_hostname, char *client_port);
-void clienterror(int fd, char *cause, char *errnum,
-                 char *shortmsg, char *longmsg);
+void parse_request(int connfd);
+void parse_hdr(rio_t *rp, char *parsed_request, char *host);
+void parse_request_line(int connfd, rio_t *rp, char *parsed_request, char *host);
+void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
+
 
 int main(int argc, char **argv) {
     int listenfd, connfd;
@@ -80,28 +86,30 @@ int main(int argc, char **argv) {
                     client_hostname, MAXLINE,
                     client_port, MAXLINE, 0);
         printf("Connected to (%s, %s)\n", client_hostname, client_port);
-        handle_request(connfd, client_hostname, client_port);
+        parse_request(connfd);
         Close(connfd);
     }
     exit(0);
 }
 
-void handle_request(int connfd, char *client_hostname, char *client_port) {
-    /* Variables for parsing request line */
-    char request_line[MAXLINE], method[MAXLINE], url[MAXLINE], version[MAXLINE];
-    char host[MAXLINE], uri[MAXLINE], port[MAXLINE];
-    /* Variables for handling request header */
-    char hdr[MAXLINE];
-    int host_hdr_exist = 0, conn_hdr_exist = 0, proxy_conn_hdr_exist = 0;
-
+void parse_request(int connfd) {
+    char parsed_request[MAXLINE];
     rio_t rio;
+    char host[MAXLINE];
 
     Rio_readinitb(&rio, connfd);
-    if (!Rio_readlineb(&rio, request_line, MAXLINE))
+    parse_request_line(connfd, &rio, parsed_request, host);
+    parse_hdr(&rio, parsed_request, host);
+    printf("Parsed request:\n%s", parsed_request);
+}
+
+void parse_request_line(int connfd, rio_t *rp, char *parsed_request, char *host) {
+    char request_line[MAXLINE], method[MAXLINE], url[MAXLINE], version[MAXLINE];
+    char uri[MAXLINE], port[MAXLINE];
+
+    if (!Rio_readlineb(rp, request_line, MAXLINE))
         return;
 
-    /* Begin of parsing request line */
-    printf("%s", request_line);
     sscanf(request_line, "%s %s %s", method, url, version);
 
     // Check request method
@@ -123,7 +131,6 @@ void handle_request(int connfd, char *client_hostname, char *client_port) {
     strcpy(uri, parsed_url->path);
     sprintf(port, "%d", parsed_url->port);
     free_parsed_url(parsed_url);
-    printf("Host: '%s', Port: '%s', URI: '%s'\n", host, port, uri);
 
     // Check HTTP version
     if (strcmp("HTTP/1.0", version) && strcmp("HTTP/1.1", version)) {
@@ -134,42 +141,44 @@ void handle_request(int connfd, char *client_hostname, char *client_port) {
         strcpy(version, "HTTP/1.0");
     }
 
-    printf("Request to be sent by proxy to server: \n");
-    printf("Server socket address: (%s : %s)\n", host, port);
-    printf("Request: %s %s %s\n", method, uri, version);
-    /* End of parsing request line */
+    sprintf(parsed_request, "%s %s %s\r\n", method, uri, version);
+}
 
-    /* Begin of handling request headers */
+void parse_hdr(rio_t *rp, char *parsed_request, char *host) {
+    char hdr[MAXLINE];
+    int host_hdr_exist = 0, conn_hdr_exist = 0, proxy_conn_hdr_exist = 0;
+
     while (1) {
-        Rio_readlineb(&rio, hdr, MAXLINE);
+        Rio_readlineb(rp, hdr, MAXLINE);
         if (!strcmp(hdr, "\r\n")) {
             break;
         }
         if (strstr(hdr, "Host:")) {
             host_hdr_exist = 1;
-            printf("%s", hdr);
+            strcat(parsed_request, hdr);
         } else if (strstr(hdr, "Connection:")) {
             conn_hdr_exist = 1;
-            printf("%s", conn_hdr);
+            strcat(parsed_request, conn_hdr);
         } else if (strstr(hdr, "Proxy connection:")) {
             proxy_conn_hdr_exist = 1;
-            printf("%s", proxy_conn_hdr);
+            strcat(parsed_request, proxy_conn_hdr);
         } else {
-            printf("%s", hdr);
+            strcat(parsed_request, hdr);
         }
     }
 
-    printf("%s", user_agent_hdr);
+    strcat(parsed_request, user_agent_hdr);
     if (!host_hdr_exist) {
-        printf("Host: %s\r\n", host);
-    } 
+        char host_hdr[MAXLINE];
+        sprintf(host_hdr, "Host: %s\r\n", host);
+        strcat(parsed_request, host_hdr);
+    }
     if (!conn_hdr_exist) {
-        printf("%s", conn_hdr);
+        strcat(parsed_request, conn_hdr);
     }
     if (!proxy_conn_hdr_exist) {
-        printf("%s", proxy_conn_hdr);
+        strcat(parsed_request, proxy_conn_hdr);
     }
-    /* End of handling request headers */
 }
 
 void clienterror(int fd, char *cause, char *errnum,
@@ -198,7 +207,6 @@ void clienterror(int fd, char *cause, char *errnum,
 }
 
 /* Begin of code for url_parser */
-
 void free_parsed_url(url_parser_url_t *url_parsed) {
     if (url_parsed->protocol)
         free(url_parsed->protocol);
