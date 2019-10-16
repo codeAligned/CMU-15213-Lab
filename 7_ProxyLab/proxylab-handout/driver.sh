@@ -52,6 +52,7 @@ function download_proxy {
     cd $1
     curl --max-time ${TIMEOUT} --silent --proxy $4 --output $2 $3
     (( $? == 28 )) && echo "Error: Fetch timed out after ${TIMEOUT} seconds"
+    # cat $2
     cd $HOME_DIR
 }
 
@@ -63,6 +64,7 @@ function download_noproxy {
     cd $1
     curl --max-time ${TIMEOUT} --silent --output $2 $3 
     (( $? == 28 )) && echo "Error: Fetch timed out after ${TIMEOUT} seconds"
+    # cat $2
     cd $HOME_DIR
 }
 
