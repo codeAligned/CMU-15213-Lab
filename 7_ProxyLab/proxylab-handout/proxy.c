@@ -36,7 +36,7 @@ int parse_url(char *url, bool verify_host, url_parser_url_t *parsed_url);
  *      a. The request is made by a browser and the URL starts with "http://".
  *      b. Only HTTP/1.0 and HTTP/1.1 are allowed.
  *  [X] Handle request headers:
- *  [X] Send request to server;
+ *  [X] Send request to server and read response;
  *      List of website using HTTP instead of HTTPS:
  *      http://www.example.com/
  *      http://www.ox.ac.uk/
@@ -46,8 +46,7 @@ int parse_url(char *url, bool verify_host, url_parser_url_t *parsed_url);
  *      http://www.nyu.edu/
  *      http://go.com/
  *      http://www.washington.edu/
- *  [] Accept response from server;
- *  [] Send response back to client.\
+ *  [] Send response back to client;
  * 
  * Before implementing caching, do not need to worry about thread-safety. The
  * reading, parsing and storing of request headers does not involve shared
