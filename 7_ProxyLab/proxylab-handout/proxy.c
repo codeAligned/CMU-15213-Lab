@@ -58,10 +58,15 @@ static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64;
 static const char *conn_hdr = "Connection: close\r\n";
 static const char *proxy_conn_hdr = "Proxy-Connection: close\r\n";
 
+unsigned long curr_time = 0; /* Used to update timestamp */
+int read_cnt = 0;            /* read_cnt: number of readers reading */
+sem_t mutex, w;              /* mutex: lock read_cnt */
+                             /* w:     lock cache while writing */
+
 /* Defined structs */
 typedef struct cache_line {
     char content[MAX_OBJECT_SIZE]; /* Stored web object */
-    long length;                   /* Actual length of web object */
+    int length;                   /* Actual length of web object */
     unsigned long long timestamp;  /* To perform LRU */
     unsigned long hash;            /* Hash value of the request header */
     int valid_bit;                 /* Valid bit */
@@ -86,6 +91,8 @@ void clienterror(int fd, char *cause, char *errnum,
 void cache_init(cache_line_t **cache_p);
 unsigned long hash_func(char *str);
 int check_cache(cache_line_t *cache, unsigned long target);
+void semaphore_init();
+int get_write_idx(cache_line_t *cache);
 
 void cache_init(cache_line_t **cache_p) {
     int i;
@@ -98,6 +105,11 @@ void cache_init(cache_line_t **cache_p) {
         p->hash = 0;
         p->valid_bit = 0;
     }
+}
+
+void semaphore_init() {
+    sem_init(&mutex, 0, 1);
+    sem_init(&w, 0, 1);
 }
 
 int main(int argc, char **argv) {
@@ -120,6 +132,9 @@ int main(int argc, char **argv) {
     /* Init proxy cache */
     cache_init(&cache);
 
+    /* Init semaphores */
+    semaphore_init();
+
     while (1) {
         clientlen = sizeof(struct sockaddr_storage);
         /* proxy_clientfd: used by proxy to serve client */
@@ -129,6 +144,9 @@ int main(int argc, char **argv) {
                     client_hostname, MAXLINE,
                     client_port, MAXLINE, 0);
         printf("Connected to (%s, %s)\n", client_hostname, client_port);
+
+        /* Update time */
+        ++curr_time;
 
         args = Malloc(sizeof(combined_t));
         args->cache = cache;
@@ -169,20 +187,64 @@ void *serve(void *vargs) {
 
 #ifdef USE_CACHE
     if ((matched_cache_line_idx = check_cache(cache, request_hash)) >= 0) {
+        printf("Cache hit!\n");
         /* Cache hit: send cached object to client */
+        P(&mutex);
+        ++read_cnt;
+        if (read_cnt == 1) {
+            P(&w);
+        }
+        V(&mutex);
+
+        printf("%d\n", (cache + matched_cache_line_idx)->length);
+        printf("%s\n", (cache + matched_cache_line_idx)->content);
         Rio_writen(client_rio.rio_fd,
                    (cache + matched_cache_line_idx)->content,
                    (cache + matched_cache_line_idx)->length);
+
+        P(&mutex);
+        --read_cnt;
+        if (read_cnt == 0) {
+            V(&w);
+        }
+        V(&mutex);
     } else {
+        printf("Cache miss!\n");
         /* Cache miss: send request to server, get response, send to client */
         proxy_serverfd = resend_request(&client_rio, &server_rio,
                                         parsed_request, host, port);
 
-        /* Send response from server to client */
+        /* Send response from server to client and put to cache */
+        char cache_buf[MAX_OBJECT_SIZE];
+        int total = 0;
         if (proxy_serverfd > 0) {
-            while (Rio_readnb(&server_rio, buf, MAXLINE) > 0) {
-                Rio_writen(client_rio.rio_fd, buf, MAXLINE);
+            ssize_t read_num;
+            while ((read_num = Rio_readnb(&server_rio, buf, MAXLINE)) > 0) {
+                /* Send response back to client */
+                Rio_writen(client_rio.rio_fd, buf, read_num);
+                printf("--- Content of buf: Begin ----\n%s\n", buf);
+                printf("--- Content of buf: End ----\n");
+
+                /* Write to cache_buf, while not full */
+                if ((total + read_num) < MAX_OBJECT_SIZE) {
+                    memcpy(cache_buf + total, buf, read_num);
+                    total += read_num;
+                }
             }
+            cache_buf[MAX_OBJECT_SIZE] = '\0';
+        }
+
+        if (total < MAX_OBJECT_SIZE) {
+            /* Write to cache */
+            printf("Writing to cache!\n");
+            int write_idx = get_write_idx(cache);
+            P(&w);
+            memcpy((cache + write_idx)->content, cache_buf, total);
+            (cache + write_idx)->length = total;
+            (cache + write_idx)->timestamp = curr_time;
+            (cache + write_idx)->hash = request_hash;
+            (cache + write_idx)->valid_bit = 1;
+            V(&w);
         }
     }
 #else
@@ -204,11 +266,31 @@ void *serve(void *vargs) {
     return NULL;
 }
 
+int get_write_idx(cache_line_t *cache) {
+    int i;
+    cache_line_t *p;
+    unsigned long lru_time = (unsigned long)-1;
+    int lru_idx;
+
+    for (p = cache, i = 0; i < CACHE_LINE_NUM; ++i, ++p) {
+        if (p->valid_bit == 0) {
+            return i;
+        } else {
+            if (p->timestamp < lru_time) {
+                lru_time = p->timestamp;
+                lru_idx = i;
+            }
+        }
+    } 
+
+    return lru_idx;
+}
+
 /**
  * check_cache - Search cache by checking valid bit and hash value. Return the
  *               index of cache line if there is a match. Otherwise return -1.
- *
- * TODO: This function currently cause Segmentation Fault
+ *               If there is a cache hit, the timestamp in the corresponding 
+ *               cache line would be updated.
  */
 int check_cache(cache_line_t *cache, unsigned long target) {
     int i;
@@ -216,8 +298,9 @@ int check_cache(cache_line_t *cache, unsigned long target) {
 
     for (p = cache, i = 0; i < CACHE_LINE_NUM; ++i, ++p) {
         if (p->valid_bit == 1 && p->hash == target) {
-            /* TODO: update timestamp with sync lock */
-
+            P(&w);
+            p->timestamp = curr_time;
+            V(&w);
             return i;
         }
     }
