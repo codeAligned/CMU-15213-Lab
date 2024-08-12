@@ -389,12 +389,13 @@ void sigchld_handler(int sig) {
         } else if (WIFSIGNALED(status)) {
             // Child process is terminated by signal of WTERMSIG(code)
             deletejob(jobs, pid);
-            printf("Job [%d] (%d) terminated by signal %d\n",
+            sio_put("Job [%d] (%d) terminated by signal %d\n",
                    jid, pid, WTERMSIG(status));
+            // instead of using printf, use sio_put to avoid interleaving.
         } else if (WIFSTOPPED(status)) {
             // child process was stopped by signal of WSTOPSIG(code)
             setjobstate(jobs, pid, ST);
-            printf("Job [%d] (%d) stopped by signal %d\n",
+            sio_put("Job [%d] (%d) stopped by signal %d\n",
                    jid, pid, WSTOPSIG(status));
         }
 
